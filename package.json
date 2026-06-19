@@ -16,7 +16,7 @@
     "gen-certs": "node scripts/gen-certs.js",
     "verify-ledger": "node scripts/verify-ledger.js",
     "lint": "echo \"(placeholder) brancher ESLint ici\" && exit 0",
-    "test": "node --test test/ 2>/dev/null || echo \"(placeholder) ajouter des tests\""
+    "test": "node --test"
   },
   "dependencies": {
     "chart.js": "^4.5.1",

@@ -41,7 +41,10 @@ lib/iso8583.js         Encodeur/décodeur ISO 8583 réel (MTI + bitmap + data el
 lib/model.js           Transaction en partie double (débit/crédit), devise, cycle de vie
 lib/ledger.js          Registre append-only persistant, chaîné SHA-256, signé ECDSA P-256
 lib/simulator.js       Générateur de données de DÉMO (étiqueté source=SIMULATION)
+lib/auth.js            Sessions (cookie HttpOnly) + mots de passe scrypt (sans dépendance)
+lib/users.js           Comptes des intervenants (rôles) dérivés du référentiel
 lib/logger.js          Logs structurés JSON
+public/login.html      Page de connexion publique + accès démo « un clic »
 public/                Frontend : modules app.js / charts.js / map.js (libs auto-hébergées)
 scripts/               gen-certs (TLS dev), verify-ledger (vérif. d'intégrité)
 ```
@@ -60,17 +63,46 @@ scripts/               gen-certs (TLS dev), verify-ledger (vérif. d'intégrité
   Vérification : `npm run verify-ledger` ou `GET /api/v1/ledger/verify`.
 - **Exports signés** : `GET /api/v1/export` renvoie un fichier (CSV/JSON) + en-têtes
   `X-Content-SHA256` et `X-Signature-ECDSA-P256`.
+- **Authentification & sessions** : connexion par identifiant/mot de passe (haché **scrypt**,
+  comparaison à temps constant), sessions serveur via cookie **HttpOnly · SameSite=Strict**
+  (`Secure` si TLS), expiration 8 h. Le flux WebSocket exige une session valide.
+
+## Authentification & espaces par rôle
+
+Une page de connexion publique (`/login.html`) donne accès à l'espace correspondant à chaque
+**intervenant**. Quatre rôles, avec **cloisonnement des données appliqué côté serveur** :
+
+| Rôle | Périmètre | Onglets |
+|---|---|---|
+| **Régulateur** (BEAC / ARCEP) | Supervision nationale — **tous** les flux | Tous |
+| **Opérateur** (banque / MoMo / EMF / passerelle) | **Restreint à ses propres transactions** (REST + WebSocket filtrés) | Monitoring, GPS, Registre, Rapports |
+| **Administrateur** | Système, intégrité du registre, PKI | Monitoring, Connecteurs, Registre, Sécurité, PKI |
+| **Auditeur** | Vérification & exports en lecture seule | Monitoring, Registre, Rapports, Sécurité, PKI |
+
+Un compte est généré pour chaque institution du référentiel (7 banques, 2 MoMo, 5 EMF,
+1 passerelle GIMAC) en plus du régulateur, de l'admin et de l'auditeur.
+
+**Accès démo « un clic » (DEV).** En dehors de la production, la page de connexion propose un
+bouton par compte pour entrer directement dans l'espace correspondant, sans mot de passe.
+C'est un **contournement volontaire réservé à la démonstration** : il est **désactivé**
+automatiquement avec `NODE_ENV=production` (ou `HUBFIP_DEMO_LOGIN=0`). Mot de passe commun
+pour la connexion classique : `HUBFIP_DEMO_PASSWORD` (défaut `demo123`).
 
 ## API
 
 | Méthode | Route | Auth | Description |
 |---|---|---|---|
 | GET | `/healthz` | — | Santé du service |
-| GET | `/api/v1/operators` | — | Référentiel (opérateurs, villes, types) |
-| GET | `/api/v1/ledger?limit=N` | — | Derniers enregistrements du registre |
-| GET | `/api/v1/ledger/verify` | — | Vérifie l'intégrité de toute la chaîne |
+| POST | `/api/v1/auth/login` | — | Connexion (identifiant + mot de passe) → cookie de session |
+| POST | `/api/v1/auth/demo` | démo | Connexion « un clic » (désactivée en production) |
+| POST | `/api/v1/auth/logout` | — | Déconnexion (détruit la session) |
+| GET | `/api/v1/auth/me` | session | Intervenant connecté (rôle, périmètre) |
+| GET | `/api/v1/auth/accounts` | — | Catalogue des comptes démo (si activé) |
+| GET | `/api/v1/operators` | session | Référentiel (opérateurs, villes, types) |
+| GET | `/api/v1/ledger?limit=N` | session | Enregistrements du registre (**filtrés selon le rôle**) |
+| GET | `/api/v1/ledger/verify` | session | Vérifie l'intégrité de toute la chaîne |
 | GET | `/api/v1/pubkey` | — | Clé publique de signature (PEM) |
-| GET | `/api/v1/export?format=csv\|json&type=` | — | Export signé |
+| GET | `/api/v1/export?format=csv\|json&type=` | session | Export signé (**filtré selon le rôle**) |
 | POST | `/api/v1/iso8583` | HMAC | Injection d'une transaction (objet JSON ou message ISO 8583) |
 
 Exemple d'injection signée :

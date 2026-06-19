@@ -11,6 +11,8 @@ const logger = require('./lib/logger');
 const ref = require('./lib/referentiel');
 const ledger = require('./lib/ledger');
 const simulator = require('./lib/simulator');
+const auth = require('./lib/auth');
+const users = require('./lib/users');
 const { createApp, originAllowed } = require('./lib/createApp');
 
 // ----------------------------------------------------------------------------
@@ -21,6 +23,11 @@ const HOST = process.env.HOST || '0.0.0.0';
 const STREAM_MS = Number(process.env.STREAM_MS) || 1500;
 const DATA_DIR = ledger.DATA_DIR;
 const TLS_DIR = path.join(DATA_DIR, 'tls');
+
+// Accès démo « un clic » : actif hors production (à désactiver via NODE_ENV=production
+// ou HUBFIP_DEMO_LOGIN=0). C'est un contournement d'authentification volontaire,
+// réservé à la démonstration — JAMAIS en production.
+const DEMO_LOGIN = process.env.NODE_ENV !== 'production' && process.env.HUBFIP_DEMO_LOGIN !== '0';
 
 ref.validate();
 ledger.init();
@@ -45,7 +52,7 @@ const API = loadApiCredentials();
 // ----------------------------------------------------------------------------
 // App + serveur HTTP(S) + WebSocket
 // ----------------------------------------------------------------------------
-const app = createApp({ api: API, tlsEnabled, broadcast: (obj) => broadcast(obj) });
+const app = createApp({ api: API, tlsEnabled, demoLogin: DEMO_LOGIN, broadcast: (obj) => broadcast(obj) });
 
 let server;
 if (tlsEnabled) {
@@ -65,21 +72,34 @@ const wss = new WebSocket.Server({
 
 function broadcast(obj) {
   const msg = JSON.stringify(obj);
+  const isTx = obj && obj.type === 'TX';
+  const opId = isTx && obj.data && obj.data.operator ? obj.data.operator.id : null;
   for (const client of wss.clients) {
     if (client.readyState !== WebSocket.OPEN) continue;
     if (client.bufferedAmount > 1_000_000) continue; // backpressure
+    // Scoping : un opérateur ne reçoit que ses propres transactions.
+    if (isTx && client.scope && client.scope.operatorId && opId !== client.scope.operatorId) continue;
     client.send(msg);
   }
 }
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  // Authentification du flux : la session (cookie) est requise. L'espace de travail
+  // étant déjà protégé, tout client légitime possède un cookie de session valide.
+  const cookies = auth.parseCookies(req.headers.cookie);
+  const session = auth.getSession(cookies[auth.SESSION_COOKIE]);
+  if (!session) { try { ws.close(4401, 'Authentification requise'); } catch { /* ignore */ } return; }
+  ws.scope = { role: session.role, operatorId: session.operatorId };
+
+  const inScope = (tx) => !ws.scope.operatorId || (tx.operator && tx.operator.id === ws.scope.operatorId);
+
   ws.isAlive = true;
   ws.on('pong', () => { ws.isAlive = true; });
   ws.send(JSON.stringify({
     type: 'INIT',
-    data: { operators: ref.OPERATORS, cities: ref.CITIES, types: ref.TYPES, ledger: ledger.stats(), pubkeyAlgorithm: ledger.stats().algorithm, tls: tlsEnabled, demo: true },
+    data: { operators: ref.OPERATORS, cities: ref.CITIES, types: ref.TYPES, ledger: ledger.stats(), pubkeyAlgorithm: ledger.stats().algorithm, tls: tlsEnabled, demo: true, scope: ws.scope },
   }));
-  ws.send(JSON.stringify({ type: 'BACKFILL', data: ledger.getRecent(40).map((r) => ({ ...r.payload, _seq: r.seq, _hash: r.hash })) }));
+  ws.send(JSON.stringify({ type: 'BACKFILL', data: ledger.getRecent(80).filter((r) => inScope(r.payload)).slice(0, 40).map((r) => ({ ...r.payload, _seq: r.seq, _hash: r.hash })) }));
 });
 
 const heartbeat = setInterval(() => {
@@ -105,9 +125,12 @@ server.listen(PORT, HOST, () => {
   console.log(`  Interface : ${scheme}://localhost:${PORT}`);
   console.log(`  TLS       : ${tlsEnabled ? 'ACTIF' : "INACTIF (HTTP en clair — 'npm run gen-certs' pour activer HTTPS/WSS)"}`);
   console.log(`  Registre  : ${ledger.stats().total} enregistrements signés (ECDSA P-256)`);
+  console.log(`  Comptes   : ${users.count()} intervenants (page de connexion : /login.html)`);
+  console.log(`  Login démo: ${DEMO_LOGIN ? "ACTIVÉ — accès 'un clic' (DEV). Désactiver en prod : NODE_ENV=production" : 'désactivé'}`);
   console.log(`  API key   : ${API.key}  (source: ${API.source})`);
   if (API.source !== 'env') console.log(`  API secret: ${API.secret}`);
   console.log('==============================================================');
+  if (DEMO_LOGIN) logger.warn('auth.demo-login.enabled', { note: 'Connexion sans mot de passe active (DEV uniquement)' });
 });
 
 // ----------------------------------------------------------------------------

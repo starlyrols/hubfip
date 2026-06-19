@@ -16,8 +16,14 @@ ledger.init();
 const { createApp } = require('../lib/createApp');
 
 const API = { key: 'test-key', secret: 'test-secret' };
-const app = createApp({ api: API, tlsEnabled: false, serveStatic: false, broadcast() {} });
+const app = createApp({ api: API, tlsEnabled: false, serveStatic: false, demoLogin: true, broadcast() {} });
 const sign = (body) => crypto.createHmac('sha256', API.secret).update(body).digest('hex');
+
+// Ouvre une session (régulateur) et renvoie l'en-tête Cookie correspondant.
+async function authCookie() {
+  const r = await fetch(base + '/api/v1/auth/demo', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'regulateur' }) });
+  return (r.headers.get('set-cookie') || '').split(';')[0];
+}
 
 let server; let base;
 before(async () => {
@@ -59,8 +65,13 @@ test('POST opérateur inconnu (auth valide) => 400', async () => {
   assert.equal(r.status, 400);
 });
 
-test('GET /api/v1/export => fichier signé (en-têtes SHA-256 + ECDSA)', async () => {
+test('GET /api/v1/export sans session => 401', async () => {
   const r = await fetch(base + '/api/v1/export?format=csv');
+  assert.equal(r.status, 401);
+});
+
+test('GET /api/v1/export (authentifié) => fichier signé (en-têtes SHA-256 + ECDSA)', async () => {
+  const r = await fetch(base + '/api/v1/export?format=csv', { headers: { Cookie: await authCookie() } });
   assert.equal(r.status, 200);
   assert.ok(r.headers.get('x-content-sha256'));
   assert.ok(r.headers.get('x-signature-ecdsa-p256'));

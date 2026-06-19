@@ -256,6 +256,61 @@
     pki: ['Clé de signature du registre', 'Clé publique ECDSA P-256 vérifiable'],
   };
 
+  // ---------- Rôles : visibilité des onglets selon l'intervenant connecté ----------
+  const NAV_ROLES = {
+    dashboard: ['REGULATEUR', 'OPERATEUR', 'ADMIN', 'AUDITEUR'],
+    operators: ['REGULATEUR'],
+    gps: ['REGULATEUR', 'OPERATEUR'],
+    connectors: ['REGULATEUR', 'ADMIN'],
+    logs: ['REGULATEUR', 'OPERATEUR', 'ADMIN', 'AUDITEUR'],
+    reports: ['REGULATEUR', 'OPERATEUR', 'AUDITEUR'],
+    cybersec: ['REGULATEUR', 'ADMIN', 'AUDITEUR'],
+    pki: ['REGULATEUR', 'ADMIN', 'AUDITEUR'],
+  };
+  const TAB_ORDER = ['dashboard', 'operators', 'gps', 'connectors', 'logs', 'reports', 'cybersec', 'pki'];
+  const ROLE_LABELS = {
+    REGULATEUR: ['Régulateur', 'text-emerald-300'],
+    OPERATEUR: ['Opérateur', 'text-blue-300'],
+    ADMIN: ['Administrateur', 'text-purple-300'],
+    AUDITEUR: ['Auditeur', 'text-amber-300'],
+  };
+
+  function initials(name) {
+    const w = String(name || '').replace(/[^A-Za-zÀ-ÿ ]/g, '').trim().split(/\s+/).filter(Boolean);
+    return ((w[0] && w[0][0] || '') + (w[1] && w[1][0] || w[0] && w[0][1] || '')).toUpperCase() || 'HB';
+  }
+
+  function renderUserChip(u) {
+    const [label, color] = ROLE_LABELS[u.role] || ['Utilisateur', 'text-gray-300'];
+    if ($('user-name')) $('user-name').textContent = u.displayName;
+    const roleEl = $('user-role');
+    if (roleEl) { roleEl.textContent = label + (u.scopeType ? ' · ' + u.scopeType : ''); roleEl.className = 'text-[11px] font-mono ' + color; }
+    if ($('user-avatar')) $('user-avatar').textContent = initials(u.displayName);
+  }
+
+  function applyRoleUI(u) {
+    document.querySelectorAll('#main-nav [data-tab]').forEach((b) => {
+      const allowed = (NAV_ROLES[b.dataset.tab] || []).includes(u.role);
+      b.style.display = allowed ? '' : 'none';
+    });
+    if (u.role === 'OPERATEUR') {
+      TITLES.dashboard = [`Espace opérateur — ${u.displayName}`, 'Vue restreinte à vos propres flux (filtrés côté serveur)'];
+    } else if (u.role === 'ADMIN') {
+      TITLES.dashboard = ['Console d’administration', 'Santé système, intégrité du registre & PKI'];
+    } else if (u.role === 'AUDITEUR') {
+      TITLES.dashboard = ['Espace audit & conformité', 'Vérification du registre signé et extractions (lecture seule)'];
+    }
+  }
+
+  function firstAllowedTab(role) {
+    return TAB_ORDER.find((t) => (NAV_ROLES[t] || []).includes(role)) || 'dashboard';
+  }
+
+  async function logout() {
+    try { await fetch('/api/v1/auth/logout', { method: 'POST' }); } catch { /* ignore */ }
+    location.href = '/login.html';
+  }
+
   function switchTab(tabId, btn) {
     document.querySelectorAll('.tab-content').forEach((el) => el.classList.add('hidden'));
     const panel = $(tabId); if (panel) panel.classList.remove('hidden');
@@ -279,7 +334,18 @@
   function closeSidebarMobile() { if (window.innerWidth < 768) document.querySelector('aside').classList.add('-translate-x-full'); }
 
   // ---------- Démarrage ----------
-  document.addEventListener('DOMContentLoaded', () => {
+  async function bootstrap() {
+    // Garde d'authentification : sans session valide, retour à la page de connexion.
+    let user;
+    try {
+      const r = await fetch('/api/v1/auth/me', { headers: { Accept: 'application/json' } });
+      if (r.status === 401) { location.href = '/login.html'; return; }
+      user = (await r.json()).user;
+    } catch { location.href = '/login.html'; return; }
+    window.__user = user;
+    renderUserChip(user);
+    applyRoleUI(user);
+
     clockTick(); setInterval(clockTick, 1000);
     connect();
 
@@ -288,8 +354,13 @@
     if ($('btn-preview')) $('btn-preview').addEventListener('click', previewReport);
     if ($('btn-export')) $('btn-export').addEventListener('click', exportReport);
     if ($('btn-burger')) $('btn-burger').addEventListener('click', toggleSidebar);
-    // onglet par défaut
-    const first = document.querySelector('#main-nav [data-tab="dashboard"]');
-    if (first) switchTab('dashboard', first);
-  });
+    if ($('btn-logout')) $('btn-logout').addEventListener('click', logout);
+
+    // Onglet par défaut adapté au rôle.
+    const firstTab = firstAllowedTab(user.role);
+    const firstBtn = document.querySelector(`#main-nav [data-tab="${firstTab}"]`);
+    if (firstBtn) switchTab(firstTab, firstBtn);
+  }
+
+  document.addEventListener('DOMContentLoaded', bootstrap);
 })();

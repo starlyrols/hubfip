@@ -1,0 +1,22 @@
+# Dépendances
+node_modules/
+
+# Données runtime (registre, clés, certificats) — ne JAMAIS versionner les secrets
+data/keys/
+data/tls/
+data/ledger.jsonl
+
+# Secrets & environnement
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# Système
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

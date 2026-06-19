@@ -41,7 +41,7 @@
       if (msg.type === 'TX') return ingest({ ...msg.data, _seq: msg.ledger.seq, _hash: msg.ledger.hash }, {});
     };
     wsConn.onclose = () => { setConnState(false); setTimeout(connect, 3000); };
-    wsConn.onerror = () => { try { wsConn.close(); } catch (_) {} };
+    wsConn.onerror = () => { try { wsConn.close(); } catch {} };
     wsConn.onopen = () => setConnState(true);
   }
 
@@ -168,7 +168,7 @@
         const dg = await crypto.subtle.digest('SHA-256', buf);
         fp.textContent = Array.from(new Uint8Array(dg)).slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join(':');
       }
-    } catch (_) {}
+    } catch {}
   }
 
   async function refreshLedgerIntegrity() {
@@ -179,7 +179,7 @@
         el.textContent = j.valid ? `Chaîne VALIDE — ${j.total} enregistrements` : `RUPTURE au seq ${j.brokenAt}`;
         el.className = j.valid ? 'text-emerald-300 font-bold' : 'text-red-300 font-bold';
       }
-    } catch (_) {}
+    } catch {}
   }
 
   // ---------- Alertes ----------

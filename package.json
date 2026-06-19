@@ -15,7 +15,7 @@
     "dev": "node --watch server.js",
     "gen-certs": "node scripts/gen-certs.js",
     "verify-ledger": "node scripts/verify-ledger.js",
-    "lint": "echo \"(placeholder) brancher ESLint ici\" && exit 0",
+    "lint": "eslint .",
     "test": "node --test"
   },
   "dependencies": {
@@ -26,5 +26,10 @@
     "helmet": "^7.2.0",
     "leaflet": "^1.9.4",
     "ws": "^8.16.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "globals": "^17.6.0"
   }
 }

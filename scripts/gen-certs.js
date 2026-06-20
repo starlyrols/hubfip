@@ -19,7 +19,7 @@ try {
     'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
     '-keyout', key, '-out', cert,
     '-days', '365',
-    '-subj', '/C=GA/O=HuBFIP (DEMO)/CN=localhost',
+    '-subj', '/C=GA/O=SUMo (DEMO)/CN=localhost',
     '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1',
   ], { stdio: 'inherit' });
   console.log(`\nCertificat TLS de démo généré :\n  ${key}\n  ${cert}\nRelancez le serveur : il détectera automatiquement ces fichiers et activera HTTPS/WSS.`);

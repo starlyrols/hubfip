@@ -1,0 +1,31 @@
+# Reverse proxy TLS pour SUMo (Caddy v2).
+# Termine le TLS et relaie vers l'app (le WebSocket/WSS est géré automatiquement).
+
+{
+	# Désactive l'API d'admin locale (durcissement).
+	admin off
+}
+
+{$SUMO_DOMAIN:localhost} {
+	# --- TLS ---
+	# Par défaut : certificat émis par la CA INTERNE de Caddy (souverain, hors-ligne,
+	# idéal on-prem). Le navigateur affichera un avertissement tant que la CA racine de
+	# Caddy n'est pas importée localement (elle est dans le volume caddy-data :
+	#   /data/caddy/pki/authorities/local/root.crt).
+	tls internal
+
+	# --- PKI SOUVERAINE : vos propres certificats ---
+	# Commentez `tls internal` ci-dessus, montez ./certs dans le service proxy
+	# (docker-compose.yml) puis décommentez :
+	# tls /certs/fullchain.pem /certs/privkey.pem
+
+	# --- DOMAINE PUBLIC (Let's Encrypt automatique) ---
+	# Commentez `tls internal`, indiquez un vrai domaine via SUMO_DOMAIN, et
+	# renseignez un email dans le bloc global : `{ email admin@votre-domaine }`.
+
+	encode gzip
+	reverse_proxy app:3000 {
+		# Transmet le schéma d'origine pour que l'app pose des cookies Secure (SUMO_TRUST_PROXY=1).
+		header_up X-Forwarded-Proto {scheme}
+	}
+}

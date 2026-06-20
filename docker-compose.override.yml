@@ -1,0 +1,20 @@
+# SUMo — surcharge de DÉVELOPPEMENT (rechargement à chaud).
+# Fusionnée AUTOMATIQUEMENT par `docker compose up` (donc par `make dev-up`).
+# La PRODUCTION (`make up`) n'inclut QUE docker-compose.yml et ignore ce fichier.
+#
+# Apports en dev : NODE_ENV=development (accès démo « un clic » réactivé), code
+# source monté depuis l'hôte + `node --watch` (redémarrage auto à chaque
+# modification), et port 3000 exposé en direct (en plus du proxy TLS sur 443).
+
+services:
+  app:
+    build: .
+    environment:
+      NODE_ENV: development
+      SUMO_TRUST_PROXY: "1"
+    command: ["npm", "run", "dev"]   # node --watch server.js
+    volumes:
+      - .:/app                       # code source de l'hôte (hot-reload)
+      - /app/node_modules            # conserve les node_modules de l'image
+    ports:
+      - "3000:3000"                  # accès direct à l'app → http://localhost:3000

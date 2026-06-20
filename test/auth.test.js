@@ -7,56 +7,46 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 
-// Isolation du registre pour les tests (avant require de ledger).
-process.env.HUBFIP_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'hubfip-auth-'));
+process.env.SUMO_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sumo-auth-'));
 
+require('../lib/config').load();
 const ledger = require('../lib/ledger');
 ledger.init();
+require('../lib/audit').init();
 const model = require('../lib/model');
 const users = require('../lib/users');
 const { createApp } = require('../lib/createApp');
 
-function listen(app) {
-  return new Promise((resolve) => {
-    const s = http.createServer(app);
-    s.listen(0, () => resolve(s));
-  });
-}
+function listen(app) { return new Promise((resolve) => { const s = http.createServer(app); s.listen(0, () => resolve(s)); }); }
 const base = (s) => `http://127.0.0.1:${s.address().port}`;
 const cookieOf = (res) => (res.headers.get('set-cookie') || '').split(';')[0];
 
-test('GET /api/v1/auth/accounts expose le catalogue de démo (mode démo)', async () => {
+test('GET /api/v1/auth/accounts expose le catalogue de démo', async () => {
   const s = await listen(createApp({ demoLogin: true, serveStatic: false }));
   const j = await (await fetch(base(s) + '/api/v1/auth/accounts')).json();
   assert.equal(j.demoLogin, true);
   const ids = j.accounts.map((a) => a.username);
-  assert.ok(ids.includes('regulateur'));
-  assert.ok(ids.includes('admin'));
-  assert.ok(ids.includes('auditeur'));
-  assert.ok(ids.includes('bgfi'));   // banque
-  assert.ok(ids.includes('airtel')); // momo
-  assert.ok(ids.includes('gimac'));  // passerelle
-  // Aucun hachage de mot de passe ne doit fuiter.
+  ['regulateur', 'antifraude', 'admin', 'auditeur', 'airtel', 'moov', 'gimac'].forEach((u) => assert.ok(ids.includes(u), `manque ${u}`));
   assert.ok(j.accounts.every((a) => a.passwordHash === undefined));
   s.close();
 });
 
 test('GET /api/v1/auth/me sans session → 401', async () => {
   const s = await listen(createApp({ demoLogin: true, serveStatic: false }));
-  const r = await fetch(base(s) + '/api/v1/auth/me');
-  assert.equal(r.status, 401);
+  assert.equal((await fetch(base(s) + '/api/v1/auth/me')).status, 401);
   s.close();
 });
 
-test('POST /api/v1/auth/demo pose une session scopée à l’opérateur', async () => {
+test('POST /api/v1/auth/demo pose une session scopée à l’opérateur + permissions', async () => {
   const s = await listen(createApp({ demoLogin: true, serveStatic: false }));
-  const r = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'bgfi' }) });
+  const r = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'airtel' }) });
   assert.equal(r.status, 200);
   const cookie = cookieOf(r);
-  assert.ok(cookie.startsWith('hubfip_sess='));
+  assert.ok(cookie.startsWith('sumo_sess='));
   const me = await (await fetch(base(s) + '/api/v1/auth/me', { headers: { Cookie: cookie } })).json();
   assert.equal(me.user.role, 'OPERATEUR');
-  assert.equal(me.user.operatorId, 'bgfi');
+  assert.equal(me.user.operatorId, 'airtel');
+  assert.ok(Array.isArray(me.user.permissions.modules));
   s.close();
 });
 
@@ -81,32 +71,27 @@ test('Accès démo désactivé (prod) → 403', async () => {
 
 test('GET /api/v1/ledger exige une session', async () => {
   const s = await listen(createApp({ demoLogin: true, serveStatic: false }));
-  const r = await fetch(base(s) + '/api/v1/ledger');
-  assert.equal(r.status, 401);
+  assert.equal((await fetch(base(s) + '/api/v1/ledger')).status, 401);
   s.close();
 });
 
-test('Le registre est filtré sur l’opérateur connecté', async () => {
-  // Seed : une transaction par opérateur distinct.
-  ledger.append(model.buildTransaction({ operatorId: 'bgfi', amount: 1000, source: 'EXTERNAL' }));
-  ledger.append(model.buildTransaction({ operatorId: 'airtel', amount: 2000, source: 'EXTERNAL' }));
-
+test('Le registre est cloisonné sur l’opérateur connecté', async () => {
+  ledger.append(model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 1000, source: 'EXTERNAL' }));
+  ledger.append(model.buildTDR({ operatorId: 'moov', type: 'P2P', amount: 2000, source: 'EXTERNAL' }));
   const s = await listen(createApp({ demoLogin: true, serveStatic: false }));
-  const login = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'bgfi' }) });
+  const login = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'airtel' }) });
   const cookie = cookieOf(login);
-
   const led = await (await fetch(base(s) + '/api/v1/ledger?limit=500', { headers: { Cookie: cookie } })).json();
   assert.ok(led.records.length >= 1);
-  assert.ok(led.records.every((rec) => rec.payload.operator.id === 'bgfi'));
+  assert.ok(led.records.every((rec) => rec.payload.operator.id === 'airtel' || rec.payload.receiverOperator.id === 'airtel'));
   s.close();
 });
 
 test('Le régulateur voit tous les opérateurs', async () => {
   const s = await listen(createApp({ demoLogin: true, serveStatic: false }));
   const login = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'regulateur' }) });
-  const cookie = cookieOf(login);
-  const led = await (await fetch(base(s) + '/api/v1/ledger?limit=500', { headers: { Cookie: cookie } })).json();
+  const led = await (await fetch(base(s) + '/api/v1/ledger?limit=500', { headers: { Cookie: cookieOf(login) } })).json();
   const opIds = new Set(led.records.map((r) => r.payload.operator.id));
-  assert.ok(opIds.size >= 2); // bgfi + airtel seedés précédemment
+  assert.ok(opIds.size >= 2);
   s.close();
 });

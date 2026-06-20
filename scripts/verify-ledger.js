@@ -7,7 +7,7 @@ ledger.init();
 const result = ledger.verifyChain();
 const s = ledger.stats();
 
-console.log('Vérification du registre HuBFIP');
+console.log('Vérification du registre SUMo (TDR)');
 console.log('  Algorithme    :', s.algorithm);
 console.log('  Enregistrements:', result.total);
 console.log('  Dernier hash  :', s.lastHash);

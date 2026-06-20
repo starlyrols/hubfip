@@ -1,10 +1,11 @@
 # Dépendances
 node_modules/
 
-# Données runtime (registre, clés, certificats) — ne JAMAIS versionner les secrets
+# Données runtime (registre, clés, certificats, config, dossiers) — ne JAMAIS versionner les secrets
 data/keys/
 data/tls/
-data/ledger.jsonl
+data/*.jsonl
+data/*.json
 
 # Secrets & environnement
 .env

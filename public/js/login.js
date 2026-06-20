@@ -1,6 +1,6 @@
 'use strict';
 
-// Page de connexion HuBFIP : connexion classique (identifiant + mot de passe) et
+// Page de connexion SUMo : connexion classique (identifiant + mot de passe) et
 // accès démonstration « un clic » (gated côté serveur par demoLogin). Aucune donnée
 // sensible n'est manipulée ici ; les sessions sont posées en cookie HttpOnly.
 (function () {
@@ -39,12 +39,18 @@
 
   const ROLE_META = {
     REGULATEUR: { border: 'border-emerald-500/40 hover:bg-emerald-900/20', badge: 'text-emerald-300' },
+    OBSERVATOIRE: { border: 'border-emerald-500/30 hover:bg-emerald-900/15', badge: 'text-emerald-300' },
+    REVENUS: { border: 'border-amber-500/40 hover:bg-amber-900/20', badge: 'text-amber-300' },
+    QOS: { border: 'border-sky-500/40 hover:bg-sky-900/20', badge: 'text-sky-300' },
+    ANTIFRAUDE: { border: 'border-red-500/40 hover:bg-red-900/20', badge: 'text-red-300' },
+    JURIDIQUE: { border: 'border-indigo-500/40 hover:bg-indigo-900/20', badge: 'text-indigo-300' },
+    CONSO: { border: 'border-teal-500/40 hover:bg-teal-900/20', badge: 'text-teal-300' },
     ADMIN: { border: 'border-purple-500/40 hover:bg-purple-900/20', badge: 'text-purple-300' },
-    AUDITEUR: { border: 'border-amber-500/40 hover:bg-amber-900/20', badge: 'text-amber-300' },
+    AUDITEUR: { border: 'border-slate-500/40 hover:bg-slate-800/40', badge: 'text-slate-300' },
     OPERATEUR: { border: 'border-gray-700 hover:bg-gray-800/60', badge: 'text-blue-300' },
   };
 
-  const CAT_ORDER = ['Régulation & supervision', 'Banque', 'MoMo', 'Microfinance', 'Passerelle'];
+  const CAT_ORDER = ['Régulateur (corps de métier)', 'Opérateurs Mobile Money'];
 
   function renderAccounts(payload) {
     const panel = $('demo-panel');

@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "hubfip-platform",
+      "name": "sumo-platform",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
       "port": 3000

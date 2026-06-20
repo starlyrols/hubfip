@@ -1,55 +1,49 @@
 'use strict';
 
-// Cartographie (Leaflet auto-hébergé). Exposé en global pour app.js.
+// Cartographie (Leaflet auto-hébergé). Cellules/stations de base + transactions live.
 window.HubMap = (function () {
   let map = null;
-  let markers = [];
-  let tracked = 0;
-  let anomalies = 0;
+  const txMarkers = [];
+  let cellLayer = null;
 
-  function init(cities) {
-    if (map) return;
-    map = L.map('map', { center: [-0.8, 11.6], zoom: 6, zoomControl: true, attributionControl: false });
+  function init() {
+    if (map || !window.L) return;
+    map = L.map('map', { center: [-0.6, 11.5], zoom: 6, zoomControl: true, attributionControl: false });
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 19 }).addTo(map);
-    cities.forEach((c) => {
-      L.circleMarker([c.lat, c.lng], { radius: 3, color: '#4b5563', fillColor: '#1f2937', fillOpacity: 0.6 })
-        .addTo(map).bindTooltip(c.name, { direction: 'top' });
+    cellLayer = L.layerGroup().addTo(map);
+  }
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  // Dessine les cellules : rayon ∝ activité, rouge si anomalies.
+  function setCells(cells) {
+    if (!map || !cellLayer) return;
+    cellLayer.clearLayers();
+    const max = Math.max(1, ...cells.map((c) => c.count));
+    cells.forEach((c) => {
+      const r = 4 + 10 * Math.sqrt(c.count / max);
+      const color = c.anomalies > 0 ? '#ef4444' : '#10b981';
+      L.circleMarker([c.lat, c.lng], { radius: r, color, fillColor: color, fillOpacity: 0.25, weight: 1 })
+        .addTo(cellLayer)
+        .bindPopup(`<div style="font-size:12px"><b>${esc(c.id)}</b> · ${esc(c.city)}<br>${c.count} transactions<br>${c.anomalies} anomalie(s)<br>type: ${esc(c.siteType)}</div>`);
     });
   }
 
-  function addMarker(tx, filters) {
-    if (!map) return;
-    if (filters.op !== 'all' && tx.operator.id !== filters.op) return;
-    if (filters.type !== 'all' && tx.operator.type !== filters.type) return;
-    if (filters.anomaliesOnly && !tx.anomaly.flagged) return;
-
-    const jLat = (Math.random() - 0.5) * 0.04;
-    const jLng = (Math.random() - 0.5) * 0.04;
-    const color = tx.anomaly.flagged ? '#ef4444' : '#3b82f6';
-    const m = L.circleMarker([tx.location.lat + jLat, tx.location.lng + jLng], {
-      radius: tx.anomaly.flagged ? 6 : 4, color, fillColor: tx.anomaly.flagged ? '#ef4444' : '#10b981', fillOpacity: 0.8, weight: 1,
-    }).addTo(map);
+  function addTx(tx) {
+    if (!map || !tx.cellOrigin) return;
+    const jLat = (Math.random() - 0.5) * 0.03;
+    const jLng = (Math.random() - 0.5) * 0.03;
+    const flagged = tx.anomaly && tx.anomaly.flagged;
+    const color = flagged ? '#ef4444' : '#3b82f6';
+    const m = L.circleMarker([tx.cellOrigin.lat + jLat, tx.cellOrigin.lng + jLng], { radius: flagged ? 6 : 3, color, fillColor: color, fillOpacity: 0.85, weight: 1 }).addTo(map);
     const fmt = new Intl.NumberFormat('fr-FR');
-    m.bindPopup(`<div style="font-size:12px"><b>${escapeHtml(tx.operator.name)}</b><br>${fmt.format(tx.amount)} XAF<br>${tx.anomaly.flagged ? 'Rejet' : 'Validé'}</div>`);
-    markers.push(m);
-    if (markers.length > 80) map.removeLayer(markers.shift());
-
-    tracked += 1;
-    if (tx.anomaly.flagged) anomalies += 1;
-    const el = document.getElementById('gps-stats');
-    if (el) el.textContent = `Transactions géolocalisées : ${tracked} | Anomalies : ${anomalies}`;
+    m.bindPopup(`<div style="font-size:12px"><b>${esc(tx.operator.name)}</b> · ${esc(tx.type)}<br>${fmt.format(tx.amountXaf)} XAF<br>${esc(tx.cellOrigin.id)} · ${esc(tx.cellOrigin.city)}<br>${flagged ? '⚠ ' + esc((tx.anomaly && tx.anomaly.reason) || 'anomalie') : 'OK'}</div>`);
+    txMarkers.push(m);
+    if (txMarkers.length > 60) map.removeLayer(txMarkers.shift());
   }
 
-  function clear() {
-    markers.forEach((m) => map && map.removeLayer(m));
-    markers = []; tracked = 0; anomalies = 0;
-    const el = document.getElementById('gps-stats');
-    if (el) el.textContent = 'Transactions géolocalisées : 0 | Anomalies : 0';
-  }
-
+  function clear() { txMarkers.forEach((m) => map && map.removeLayer(m)); txMarkers.length = 0; }
   function invalidate() { if (map) setTimeout(() => map.invalidateSize(), 120); }
 
-  function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-
-  return { init, addMarker, clear, invalidate };
+  return { init, setCells, addTx, clear, invalidate };
 })();

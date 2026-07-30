@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arcep.ga/m14/schemas/n0-poste.schema.json",
+  "title": "M14 — Lot N0 opérateur postal (trimestriel, gabarits SP-A..D)",
+  "description": "Dictionnaire machine du gabarit gabarit-N0-poste.xlsx. Contrôles bloquants EX-L2-02 ; contrôles inter-champs en x-controles.",
+  "type": "object",
+  "required": ["identification", "reseau", "activite_services", "activite_provinces", "qualite", "tarifs"],
+  "additionalProperties": false,
+  "properties": {
+    "identification": {
+      "type": "object",
+      "required": ["acteur_id", "periode", "date_depot", "declarant", "courriel"],
+      "additionalProperties": false,
+      "properties": {
+        "acteur_id": { "type": "string", "pattern": "^GA-POSTE-[0-9]{3}$" },
+        "periode": { "type": "string", "pattern": "^[0-9]{4}-T[1-4]$", "description": "Trimestre déclaré, AAAA-Tn." },
+        "date_depot": { "$ref": "#/$defs/dateIso" },
+        "declarant": { "$ref": "#/$defs/texteCourtSansMsisdn" },
+        "courriel": { "type": "string", "format": "email", "maxLength": 120 }
+      }
+    },
+    "reseau": {
+      "description": "SP-A / SP-01 — une entrée par point de service financier postal.",
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id_point", "province", "localite", "latitude", "longitude", "services", "statut"],
+        "additionalProperties": false,
+        "properties": {
+          "id_point": { "type": "string", "minLength": 3, "maxLength": 40, "pattern": "^[A-Za-z0-9._-]+$" },
+          "province": { "$ref": "#/$defs/province" },
+          "localite": { "$ref": "#/$defs/texteCourtSansMsisdn" },
+          "latitude": { "type": "number", "minimum": -4.1, "maximum": 2.4 },
+          "longitude": { "type": "number", "minimum": 8.5, "maximum": 14.6 },
+          "services": {
+            "type": "array", "minItems": 1, "uniqueItems": true,
+            "items": { "$ref": "#/$defs/servicePostal" }
+          },
+          "statut": { "enum": ["ACTIF", "INACTIF"] }
+        }
+      }
+    },
+    "activite_services": {
+      "description": "SP-B / SP-02 — une entrée par service.",
+      "type": "array", "minItems": 8, "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["service", "nombre", "valeur_xaf"],
+        "additionalProperties": false,
+        "properties": {
+          "service": { "$ref": "#/$defs/servicePostal" },
+          "nombre": { "$ref": "#/$defs/entierPositif" },
+          "valeur_xaf": { "$ref": "#/$defs/montantXaf" }
+        }
+      }
+    },
+    "activite_provinces": {
+      "description": "SP-B — répartition par province, tous services confondus.",
+      "type": "array", "minItems": 9, "maxItems": 9,
+      "items": {
+        "type": "object",
+        "required": ["province", "nombre", "valeur_xaf"],
+        "additionalProperties": false,
+        "properties": {
+          "province": { "$ref": "#/$defs/province" },
+          "nombre": { "$ref": "#/$defs/entierPositif" },
+          "valeur_xaf": { "$ref": "#/$defs/montantXaf" }
+        }
+      }
+    },
+    "qualite": {
+      "description": "SP-C / SP-03 / SP-04 — une entrée par province.",
+      "type": "array", "minItems": 9, "maxItems": 9,
+      "items": {
+        "type": "object",
+        "required": ["province", "jours_ouvres", "jours_indispo_si", "delai_median_mandat_heures", "incidents_majeurs"],
+        "additionalProperties": false,
+        "properties": {
+          "province": { "$ref": "#/$defs/province" },
+          "jours_ouvres": { "type": "integer", "minimum": 0, "maximum": 92 },
+          "jours_indispo_si": { "type": "integer", "minimum": 0, "maximum": 92 },
+          "delai_median_mandat_heures": { "type": "number", "minimum": 0, "maximum": 720 },
+          "incidents_majeurs": { "$ref": "#/$defs/entierPositif" }
+        }
+      }
+    },
+    "tarifs": {
+      "description": "SP-D — grille tarifaire des services financiers postaux (CT-01 applicable).",
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["service", "palier_min_xaf", "palier_max_xaf", "frais_fixes_xaf", "frais_pct", "date_application"],
+        "additionalProperties": false,
+        "properties": {
+          "service": { "$ref": "#/$defs/servicePostal" },
+          "palier_min_xaf": { "$ref": "#/$defs/montantXaf" },
+          "palier_max_xaf": { "$ref": "#/$defs/montantXaf" },
+          "frais_fixes_xaf": { "$ref": "#/$defs/montantXaf" },
+          "frais_pct": { "type": "number", "minimum": 0, "maximum": 1 },
+          "date_application": { "$ref": "#/$defs/dateIso" }
+        }
+      }
+    }
+  },
+  "x-controles": [
+    { "id": "C-PO-01", "regle": "somme(activite_provinces[].nombre) == somme(activite_services[].nombre) ; idem pour valeur_xaf", "niveau": "bloquant" },
+    { "id": "C-PO-02", "regle": "jours_indispo_si <= jours_ouvres pour chaque province", "niveau": "bloquant" },
+    { "id": "C-PO-03", "regle": "palier_min_xaf <= palier_max_xaf pour chaque ligne tarifaire", "niveau": "bloquant" },
+    { "id": "C-PO-04", "regle": "nombre de points ACTIF de reseau[] cohérent (±5 %) avec SP-01 publié au trimestre précédent (régression à justifier)", "niveau": "non bloquant — signalement" }
+  ],
+  "$defs": {
+    "province": { "enum": ["Estuaire", "Haut-Ogooué", "Moyen-Ogooué", "Ngounié", "Nyanga", "Ogooué-Ivindo", "Ogooué-Lolo", "Ogooué-Maritime", "Woleu-Ntem"] },
+    "servicePostal": { "enum": ["MANDAT_NATIONAL_EMISSION", "MANDAT_NATIONAL_PAIEMENT", "MANDAT_INTERNATIONAL_EMISSION", "MANDAT_INTERNATIONAL_PAIEMENT", "VERSEMENT", "RETRAIT", "MOBILE_MONEY_POSTAL", "AUTRE"] },
+    "entierPositif": { "type": "integer", "minimum": 0, "maximum": 100000000000 },
+    "montantXaf": { "type": "number", "minimum": 0, "maximum": 1000000000000000 },
+    "dateIso": { "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$" },
+    "texteCourtSansMsisdn": {
+      "type": "string", "minLength": 1, "maxLength": 120,
+      "not": { "pattern": "(\\+?241[0-9]{7,9})|([0-9]{9,})" }
+    }
+  }
+}

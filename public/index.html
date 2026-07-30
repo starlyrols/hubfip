@@ -3,33 +3,28 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HuBFIP — Démonstration de monitoring financier</title>
+    <title>SUMo — Supervision Mobile Money</title>
+    <script src="/js/theme.js"></script><!-- pose data-theme AVANT le premier rendu (CSP : pas d'inline) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="/css/theme.css">
     <script defer src="/vendor/leaflet/leaflet.js"></script>
     <script defer src="/vendor/chartjs/chart.umd.js"></script>
     <script defer src="/js/charts.js"></script>
     <script defer src="/js/map.js"></script>
     <script defer src="/js/app.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; background: #050505; color: #e5e5e5; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #111; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-        .glass-panel { background: rgba(20,20,20,0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
-        .cyber-grid { background-image: linear-gradient(rgba(16,185,129,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(16,185,129,0.03) 1px, transparent 1px); background-size: 20px 20px; }
-        .glow-text { text-shadow: 0 0 10px rgba(16,185,129,0.5); }
-        .hash-truncate { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
+        /* Styles structurels propres à cette page — les couleurs vivent dans /css/theme.css */
+        .hash-truncate { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
         .tab-content.hidden { display: none; }
         .tab-content:focus { outline: none; }
         #map { height: 100%; width: 100%; border-radius: 0.75rem; }
-        .leaflet-container { background: #0a0a0a; }
-        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1a1a1a; color: #e5e5e5; border: 1px solid #333; }
         .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
         .skip-link { position: absolute; left: 8px; top: -40px; background: #10b981; color: #042; padding: 8px 12px; border-radius: 6px; z-index: 100; transition: top .15s; }
         .skip-link:focus { top: 8px; }
+        .kpi { } .nav-section:empty { display:none; }
+        .mod-col { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 9px; letter-spacing: 0.04em; white-space: nowrap; display: inline-block; max-height: 110px; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden cyber-grid">
@@ -38,32 +33,51 @@
 <!-- Bannière DÉMONSTRATION permanente (honnêteté) -->
 <div role="alert" class="bg-amber-500 text-black text-center text-xs font-bold py-1.5 px-4 z-40">
     <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
-    DÉMONSTRATION — données simulées, ne reflète aucun flux financier réel. Aucun mandat officiel.
+    PROTOTYPE / DÉMONSTRATION — données simulées, ne reflète aucun flux Mobile Money réel. Sans mandat officiel.
 </div>
 
 <div class="flex flex-1 overflow-hidden relative">
 <!-- ===== SIDEBAR ===== -->
 <aside class="w-72 glass-panel flex flex-col h-full border-r border-gray-800 fixed md:relative inset-y-0 left-0 -translate-x-full md:translate-x-0 transition-transform duration-200 z-30">
-    <div class="p-6 border-b border-gray-800 flex items-center gap-4">
-        <div class="w-12 h-12 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center"><i class="fa-solid fa-link text-white text-xl" aria-hidden="true"></i></div>
+    <div class="p-5 border-b border-gray-800 flex items-center gap-3">
+        <div class="w-11 h-11 rounded-lg bg-gradient-to-br from-emerald-500 to-teal-700 flex items-center justify-center"><i class="fa-solid fa-tower-cell text-white text-lg" aria-hidden="true"></i></div>
         <div>
-            <h1 class="text-2xl font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200 glow-text">HuBFIP</h1>
-            <p class="text-[10px] text-emerald-400 font-mono tracking-widest uppercase mt-1">Prototype · Démo</p>
+            <h1 class="text-2xl font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200 glow-text">SUMo</h1>
+            <p class="text-[9px] text-emerald-400 font-mono tracking-wider uppercase mt-0.5">Supervision Mobile Money</p>
         </div>
     </div>
-    <nav class="flex-1 p-4 space-y-2 overflow-y-auto" id="main-nav" role="tablist" aria-label="Navigation principale">
-        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-2 px-2">Supervision</p>
-        <button role="tab" data-tab="dashboard" id="tab-btn-dashboard" aria-controls="dashboard" aria-selected="true" class="w-full flex items-center gap-3 px-4 py-3 text-gray-300 rounded-lg text-left"><i class="fa-solid fa-chart-pie w-5" aria-hidden="true"></i><span class="font-medium">Monitoring global</span></button>
-        <button role="tab" data-tab="operators" id="tab-btn-operators" aria-controls="operators" aria-selected="false" class="w-full flex items-center gap-3 px-4 py-3 text-gray-300 rounded-lg text-left"><i class="fa-solid fa-building-columns w-5" aria-hidden="true"></i><span class="font-medium">Banques, MoMo & EMF</span></button>
-        <button role="tab" data-tab="gps" id="tab-btn-gps" aria-controls="gps" aria-selected="false" class="w-full flex items-center gap-3 px-4 py-3 text-gray-300 rounded-lg text-left"><i class="fa-solid fa-map-location-dot w-5" aria-hidden="true"></i><span class="font-medium">Géolocalisation (GPS)</span></button>
-        <button role="tab" data-tab="connectors" id="tab-btn-connectors" aria-controls="connectors" aria-selected="false" class="w-full flex items-center gap-3 px-4 py-3 text-gray-300 rounded-lg text-left"><i class="fa-solid fa-plug w-5" aria-hidden="true"></i><span class="font-medium">Connecteurs (API)</span></button>
-        <button role="tab" data-tab="logs" id="tab-btn-logs" aria-controls="logs" aria-selected="false" class="w-full flex items-center gap-3 px-4 py-3 text-gray-300 rounded-lg text-left"><i class="fa-solid fa-list-check w-5" aria-hidden="true"></i><span class="font-medium">Registre chaîné</span></button>
-        <button role="tab" data-tab="reports" id="tab-btn-reports" aria-controls="reports" aria-selected="false" class="w-full flex items-center gap-3 px-4 py-3 text-gray-300 rounded-lg text-left"><i class="fa-solid fa-file-invoice w-5" aria-hidden="true"></i><span class="font-medium">Rapports & exports</span></button>
-        <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2 mt-6 px-2">Sécurité</p>
-        <button role="tab" data-tab="cybersec" id="tab-btn-cybersec" aria-controls="cybersec" aria-selected="false" class="w-full flex items-center gap-3 px-4 py-3 text-gray-300 rounded-lg text-left"><i class="fa-solid fa-shield-halved w-5" aria-hidden="true"></i><span class="font-medium">Sécurité & intégrité</span></button>
-        <button role="tab" data-tab="pki" id="tab-btn-pki" aria-controls="pki" aria-selected="false" class="w-full flex items-center gap-3 px-4 py-3 text-gray-300 rounded-lg text-left"><i class="fa-solid fa-key w-5" aria-hidden="true"></i><span class="font-medium">Clé de signature</span></button>
+    <nav class="flex-1 p-3 space-y-1 overflow-y-auto text-sm" id="main-nav" role="tablist" aria-label="Navigation principale">
+        <p id="nav-parent-monitoring" class="text-[11px] font-bold text-emerald-400 uppercase tracking-widest mb-1 mt-1 px-2"><i class="fa-solid fa-satellite-dish mr-1.5" aria-hidden="true"></i>Monitoring</p>
+        <div id="nav-group-monitoring" class="ml-2 pl-2 border-l border-gray-800 space-y-1">
+            <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-2 px-2">Observatoire & marché</p>
+            <button role="tab" data-tab="observatoire" class="nav-btn"><i class="fa-solid fa-chart-pie w-5" aria-hidden="true"></i><span>Observatoire</span></button>
+            <button role="tab" data-tab="operators" class="nav-btn"><i class="fa-solid fa-tower-cell w-5" aria-hidden="true"></i><span>Opérateurs & moteurs</span></button>
+            <button role="tab" data-tab="geo" class="nav-btn"><i class="fa-solid fa-map-location-dot w-5" aria-hidden="true"></i><span>Géolocalisation</span></button>
+            <button role="tab" data-tab="registre" class="nav-btn"><i class="fa-solid fa-link w-5" aria-hidden="true"></i><span>Registre (TDR)</span></button>
+
+            <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Économie & qualité</p>
+            <button role="tab" data-tab="revenus" class="nav-btn"><i class="fa-solid fa-coins w-5" aria-hidden="true"></i><span>Revenus & redevances</span></button>
+            <button role="tab" data-tab="qos" class="nav-btn"><i class="fa-solid fa-gauge-high w-5" aria-hidden="true"></i><span>Qualité de service</span></button>
+            <button role="tab" data-tab="reporting" class="nav-btn"><i class="fa-solid fa-file-invoice w-5" aria-hidden="true"></i><span>Reporting réglementaire</span></button>
+
+            <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Antifraude & enquête</p>
+            <button role="tab" data-tab="antifraude" class="nav-btn"><i class="fa-solid fa-user-shield w-5" aria-hidden="true"></i><span>Antifraude / AML</span></button>
+            <button role="tab" data-tab="investigation" class="nav-btn"><i class="fa-solid fa-folder-open w-5" aria-hidden="true"></i><span>Investigation</span></button>
+            <button role="tab" data-tab="analytics" class="nav-btn"><i class="fa-solid fa-brain w-5" aria-hidden="true"></i><span>Analytics / Risque</span></button>
+
+            <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Système</p>
+            <button role="tab" data-tab="connecteurs" class="nav-btn"><i class="fa-solid fa-plug w-5" aria-hidden="true"></i><span>Connecteurs / Collecte</span></button>
+            <button role="tab" data-tab="securite" class="nav-btn"><i class="fa-solid fa-shield-halved w-5" aria-hidden="true"></i><span>Sécurité & audit</span></button>
+            <button role="tab" data-tab="admin" class="nav-btn"><i class="fa-solid fa-sliders w-5" aria-hidden="true"></i><span>Administration</span></button>
+        </div>
+
+        <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Administration système</p>
+        <button role="tab" data-tab="dispatch" class="nav-btn"><i class="fa-solid fa-sitemap w-5" aria-hidden="true"></i><span>Dispatch des modules</span></button>
+
+        <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Aide</p>
+        <button role="tab" data-tab="aide" class="nav-btn"><i class="fa-solid fa-circle-question w-5" aria-hidden="true"></i><span>Aide &amp; guide</span></button>
     </nav>
-    <div class="p-5 border-t border-gray-800 bg-black/40 text-xs">
+    <div class="p-4 border-t border-gray-800 bg-black/40 text-xs">
         <div class="flex items-center gap-2">
             <div id="conn-dot" class="w-2.5 h-2.5 rounded-full bg-red-500"></div>
             <span id="conn-label" class="font-medium text-gray-300">Connexion…</span>
@@ -75,18 +89,19 @@
 
 <!-- ===== MAIN ===== -->
 <main id="main-content" class="flex-1 flex flex-col h-full relative overflow-y-auto">
-    <header class="h-20 glass-panel border-b border-gray-800 flex justify-between items-center px-4 md:px-8 sticky top-0 z-20">
+    <header class="h-16 glass-panel border-b border-gray-800 flex justify-between items-center px-4 md:px-6 sticky top-0 z-20">
         <div class="flex items-center gap-3">
             <button id="btn-burger" class="md:hidden text-gray-300 p-2" aria-label="Ouvrir le menu"><i class="fa-solid fa-bars" aria-hidden="true"></i></button>
             <div>
-                <h2 class="text-lg md:text-xl font-semibold text-gray-100" id="tab-title">Monitoring global des flux</h2>
-                <p class="text-xs md:text-sm text-gray-400 mt-1" id="tab-subtitle">Agrégation du flux de démonstration en temps réel</p>
+                <h2 class="text-base md:text-lg font-semibold text-gray-100" id="tab-title">Observatoire</h2>
+                <p class="text-[11px] md:text-xs text-gray-400" id="tab-subtitle">Statistiques de marché en temps réel</p>
             </div>
         </div>
-        <div class="flex items-center gap-3 md:gap-4">
+        <div class="flex items-center gap-3">
             <p class="text-xs text-emerald-400 font-mono tracking-widest hidden sm:block" id="clock">00:00:00 WAT</p>
-            <div class="flex items-center gap-3 sm:pl-4 sm:border-l border-gray-700">
-                <div class="text-right hidden xs:block sm:block">
+            <button id="btn-theme" class="text-gray-400 hover:text-emerald-400 p-2" title="Basculer thème clair/sombre" aria-label="Basculer thème clair/sombre"><i class="fa-solid fa-moon" aria-hidden="true"></i></button>
+            <div class="flex items-center gap-2 sm:pl-3 sm:border-l border-gray-700">
+                <div class="text-right hidden sm:block">
                     <p class="text-sm font-bold text-gray-200 leading-tight" id="user-name">—</p>
                     <p class="text-[11px] font-mono text-gray-400" id="user-role">—</p>
                 </div>
@@ -96,118 +111,53 @@
         </div>
     </header>
 
-    <!-- DASHBOARD -->
-    <div id="dashboard" class="p-4 md:p-8 space-y-6 tab-content" role="tabpanel" aria-labelledby="tab-btn-dashboard" tabindex="-1">
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" aria-live="polite">
-            <div class="glass-panel p-6 rounded-xl border-t-2 border-t-emerald-500"><p class="text-sm text-gray-400 uppercase tracking-wider font-medium">Volume cumulé (session)</p><h3 class="text-3xl font-bold mt-2 text-white" id="vol-counter">0 XAF</h3><p class="mt-2 text-sm text-emerald-400"><i class="fa-solid fa-spinner fa-spin mr-1" aria-hidden="true"></i> Flux live</p></div>
-            <div class="glass-panel p-6 rounded-xl border-t-2 border-t-blue-500"><p class="text-sm text-gray-400 uppercase tracking-wider font-medium">Transactions / sec</p><h3 class="text-3xl font-bold mt-2 text-white" id="tps-counter">0</h3><p class="mt-2 text-sm text-blue-400">Mesuré (fenêtre 5 s)</p></div>
-            <div class="glass-panel p-6 rounded-xl border-t-2 border-t-purple-500"><p class="text-sm text-gray-400 uppercase tracking-wider font-medium">Endpoints actifs</p><h3 class="text-3xl font-bold mt-2 text-white" id="endpoints-counter">0</h3><p class="mt-2 text-sm text-purple-400">Couples opérateur / ville</p></div>
-            <div class="glass-panel p-6 rounded-xl border-t-2 border-t-red-500"><p class="text-sm text-gray-400 uppercase tracking-wider font-medium">Anomalies</p><h3 class="text-3xl font-bold mt-2 text-white" id="anomaly-counter">0</h3><p class="mt-2 text-sm text-red-400"><i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i> Transactions rejetées</p></div>
+    <!-- OBSERVATOIRE (dashboard live) -->
+    <div id="observatoire" class="p-4 md:p-6 space-y-5 tab-content" role="tabpanel" tabindex="-1">
+        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4" aria-live="polite">
+            <div class="glass-panel p-4 rounded-xl border-t-2 border-t-emerald-500"><p class="text-[11px] text-gray-400 uppercase tracking-wider">Volume (fenêtre)</p><h3 class="text-xl font-bold mt-1 text-white" id="kpi-volume">0</h3></div>
+            <div class="glass-panel p-4 rounded-xl border-t-2 border-t-blue-500"><p class="text-[11px] text-gray-400 uppercase tracking-wider">Transactions</p><h3 class="text-xl font-bold mt-1 text-white" id="kpi-count">0</h3></div>
+            <div class="glass-panel p-4 rounded-xl border-t-2 border-t-sky-500"><p class="text-[11px] text-gray-400 uppercase tracking-wider">Taux de succès</p><h3 class="text-xl font-bold mt-1 text-white" id="kpi-success">—</h3></div>
+            <div class="glass-panel p-4 rounded-xl border-t-2 border-t-amber-500"><p class="text-[11px] text-gray-400 uppercase tracking-wider">Frais perçus</p><h3 class="text-xl font-bold mt-1 text-white" id="kpi-fees">0</h3></div>
+            <div class="glass-panel p-4 rounded-xl border-t-2 border-t-red-500"><p class="text-[11px] text-gray-400 uppercase tracking-wider">Alertes</p><h3 class="text-xl font-bold mt-1 text-white" id="kpi-alerts">0</h3></div>
         </div>
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-2 glass-panel p-6 rounded-xl"><h3 class="text-lg font-semibold mb-4 text-gray-200">Débit financier (temps réel)</h3><div class="h-80 w-full"><canvas id="fluxChart"></canvas></div></div>
-            <div class="glass-panel p-6 rounded-xl flex flex-col"><h3 class="text-lg font-semibold mb-4 text-gray-200">Répartition par secteur</h3><div class="flex-1 w-full flex items-center justify-center relative"><canvas id="ecosystemChart"></canvas><div class="absolute flex flex-col items-center justify-center"><span class="text-2xl font-bold" id="eco-center">0</span><span class="text-xs text-gray-400">transactions</span></div></div></div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div class="lg:col-span-2 glass-panel p-5 rounded-xl"><h3 class="text-sm font-semibold mb-3 text-gray-200">Débit (volume/min · temps réel)</h3><div class="h-64 w-full"><canvas id="fluxChart"></canvas></div></div>
+            <div class="glass-panel p-5 rounded-xl flex flex-col"><h3 class="text-sm font-semibold mb-3 text-gray-200">Parts de marché (valeur)</h3><div class="flex-1 w-full flex items-center justify-center relative min-h-[180px]"><canvas id="shareChart"></canvas></div></div>
         </div>
-    </div>
-
-    <!-- OPERATORS -->
-    <div id="operators" class="p-4 md:p-8 space-y-6 tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-operators" tabindex="-1">
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="glass-panel p-6 rounded-xl"><h3 class="text-lg font-semibold text-gray-200 mb-6">Mobile Money & Paiement</h3><div class="space-y-4 max-h-[500px] overflow-y-auto" id="momo-list"></div></div>
-            <div class="glass-panel p-6 rounded-xl"><h3 class="text-lg font-semibold text-gray-200 mb-6">Banques commerciales</h3><div class="space-y-4 max-h-[500px] overflow-y-auto" id="banks-list"></div></div>
-            <div class="glass-panel p-6 rounded-xl"><h3 class="text-lg font-semibold text-gray-200 mb-6">Microfinances (EMF)</h3><div class="space-y-4 max-h-[500px] overflow-y-auto" id="emf-list"></div></div>
-        </div>
-        <div class="glass-panel p-6 rounded-xl"><h3 class="text-lg font-semibold mb-4 text-gray-200">Volume cumulé par opérateur (session)</h3><div class="h-80 w-full"><canvas id="barChart"></canvas></div></div>
-    </div>
-
-    <!-- GPS -->
-    <div id="gps" class="p-4 md:p-8 space-y-6 tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-gps" tabindex="-1">
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[70vh] lg:h-[calc(100vh-220px)]">
-            <div class="lg:col-span-2 glass-panel p-0 rounded-xl overflow-hidden relative"><div id="map"></div><div class="absolute bottom-4 left-4 glass-panel px-4 py-2 rounded-lg text-xs text-gray-300 z-[1000]"><span id="gps-stats">Transactions géolocalisées : 0 | Anomalies : 0</span></div></div>
-            <div class="glass-panel p-6 rounded-xl flex flex-col">
-                <h3 class="text-lg font-semibold mb-4 text-gray-200">Filtres</h3>
-                <div class="space-y-4 text-sm">
-                    <div><label for="gps-filter-operator" class="text-gray-300 block mb-1">Opérateur</label><select id="gps-filter-operator" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm"><option value="all">Tous</option></select></div>
-                    <div><label for="gps-filter-type" class="text-gray-300 block mb-1">Secteur</label><select id="gps-filter-type" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-sm"><option value="all">Tous</option><option value="Banque">Banques</option><option value="MoMo">Mobile Money</option><option value="Microfinance">Microfinance</option><option value="Passerelle">Passerelle</option></select></div>
-                    <div class="flex items-center gap-2"><input type="checkbox" id="gps-show-anomalies-only" class="rounded bg-gray-800 border-gray-600"><label for="gps-show-anomalies-only" class="text-gray-300">Anomalies uniquement</label></div>
-                    <div class="border-t border-gray-700 pt-4 mt-4"><p class="text-gray-300 mb-2">Légende</p><div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-blue-500 inline-block"></span> Validée</div><div class="flex items-center gap-2"><span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span> Rejetée</div></div>
-                </div>
-            </div>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div class="glass-panel p-5 rounded-xl"><h3 class="text-sm font-semibold mb-3 text-gray-200">Par type de transaction</h3><div class="h-56"><canvas id="typeChart"></canvas></div></div>
+            <div class="glass-panel p-5 rounded-xl"><h3 class="text-sm font-semibold mb-3 text-gray-200">Par canal</h3><div class="h-56"><canvas id="channelChart"></canvas></div></div>
+            <div class="glass-panel p-5 rounded-xl flex flex-col"><h3 class="text-sm font-semibold mb-3 text-gray-200">Flux récent</h3><div class="overflow-auto flex-1 max-h-56"><table class="w-full text-left text-xs"><tbody id="live-tx" class="divide-y divide-gray-800/60 font-mono"></tbody></table></div></div>
         </div>
     </div>
 
-    <!-- CONNECTORS -->
-    <div id="connectors" class="p-4 md:p-8 space-y-6 tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-connectors" tabindex="-1">
-        <div class="glass-panel p-6 rounded-xl">
-            <h3 class="text-lg font-semibold mb-2 text-gray-200">Connecteurs d'injection (ISO 8583 réel · HMAC)</h3>
-            <p class="text-xs text-gray-400 mb-4">Endpoint : <span class="font-mono text-emerald-400">POST /api/v1/iso8583</span> — authentification HMAC-SHA256, validation de schéma, parsing ISO 8583 (MTI + bitmap + data elements).</p>
-            <div class="overflow-x-auto"><table class="w-full text-sm text-left"><thead class="text-gray-400 uppercase bg-gray-800/50"><tr><th class="p-3">Institution</th><th class="p-3">Type</th><th class="p-3">Endpoint</th><th class="p-3">Signature registre</th><th class="p-3">Statut</th></tr></thead><tbody id="connectors-table" class="divide-y divide-gray-800"></tbody></table></div>
-        </div>
-    </div>
+    <!-- Conteneurs de modules (remplis par les renderers) -->
+    <div id="operators" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-operators"></div></div>
+    <div id="revenus" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-revenus"></div></div>
+    <div id="qos" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-qos"></div></div>
+    <div id="antifraude" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-antifraude"></div></div>
+    <div id="investigation" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-investigation"></div></div>
+    <div id="analytics" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-analytics"></div></div>
+    <div id="connecteurs" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-connecteurs"></div></div>
+    <div id="registre" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-registre"></div></div>
+    <div id="reporting" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-reporting"></div></div>
+    <div id="securite" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-securite"></div></div>
+    <div id="admin" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-admin"></div></div>
+    <div id="dispatch" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-dispatch"></div></div>
+    <div id="aide" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-aide"></div></div>
 
-    <!-- LOGS -->
-    <div id="logs" class="p-4 md:p-8 space-y-6 tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-logs" tabindex="-1">
-        <div class="glass-panel rounded-xl overflow-hidden flex flex-col h-[70vh] lg:h-[calc(100vh-200px)]">
-            <div class="p-6 border-b border-gray-800 bg-gray-900/50"><h3 class="text-lg font-semibold text-white">Registre chaîné vérifiable</h3><p class="text-xs text-gray-400 mt-1">Chaînage SHA-256 + signature ECDSA P-256 — persistant (data/ledger.jsonl), non-répudiation cryptographique.</p></div>
-            <div class="overflow-auto flex-1"><table class="w-full text-left border-collapse"><thead class="sticky top-0 bg-gray-900 z-10"><tr class="text-gray-400 text-xs uppercase tracking-wider"><th class="p-4 border-b border-gray-800">Horodatage</th><th class="p-4 border-b border-gray-800">Localisation</th><th class="p-4 border-b border-gray-800">Hash registre (SHA-256)</th><th class="p-4 border-b border-gray-800">Émetteur</th><th class="p-4 border-b border-gray-800 text-right">Montant (XAF)</th><th class="p-4 border-b border-gray-800 text-center">Statut</th></tr></thead><tbody class="text-sm font-mono" id="log-table" aria-live="polite"></tbody></table></div>
-        </div>
-    </div>
-
-    <!-- REPORTS -->
-    <div id="reports" class="p-4 md:p-8 space-y-6 tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-reports" tabindex="-1">
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="space-y-6 flex flex-col">
-                <div class="glass-panel p-6 rounded-xl">
-                    <h3 class="text-lg font-semibold mb-4 text-gray-200">Extractions signées</h3>
-                    <div class="space-y-4 text-sm">
-                        <div><label class="text-gray-300 block mb-1">Période</label><div class="flex gap-2"><label class="sr-only" for="report-start">Début</label><input type="date" id="report-start" class="bg-gray-800 border border-gray-700 rounded p-2 text-white w-1/2 text-xs"><label class="sr-only" for="report-end">Fin</label><input type="date" id="report-end" class="bg-gray-800 border border-gray-700 rounded p-2 text-white w-1/2 text-xs"></div></div>
-                        <div><label class="text-gray-300 block mb-1" for="report-type">Secteur</label><select id="report-type" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-white text-xs"><option value="all">Tous</option><option value="Banque">Banques</option><option value="MoMo">Mobile Money</option><option value="Microfinance">Microfinance</option><option value="Passerelle">Passerelle</option></select></div>
-                        <div><label class="text-gray-300 block mb-1" for="report-format">Format</label><select id="report-format" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-emerald-400 font-semibold text-xs"><option value="CSV">CSV (.csv)</option><option value="JSON">JSON (.json)</option></select></div>
-                        <div class="flex gap-3 pt-2">
-                            <button id="btn-preview" class="flex-1 bg-gray-800 hover:bg-gray-700 text-gray-200 border border-gray-700 px-3 py-2 rounded-md text-xs font-medium"><i class="fa-solid fa-eye mr-1" aria-hidden="true"></i> Aperçu</button>
-                            <button id="btn-export" class="flex-1 bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-2 rounded-md text-xs font-medium"><i class="fa-solid fa-file-export mr-1" aria-hidden="true"></i> Exporter</button>
-                        </div>
-                        <p class="text-[11px] text-gray-400">L'export est généré par le serveur avec une empreinte SHA-256 et une signature ECDSA P-256 (en-têtes de réponse).</p>
-                    </div>
-                </div>
-                <div class="glass-panel p-6 rounded-xl flex flex-col flex-1 min-h-[200px]"><h3 class="text-base font-semibold mb-3 text-gray-200">Historique (session)</h3><div class="overflow-y-auto flex-1"><table class="w-full text-left"><tbody id="export-history-table" class="divide-y divide-gray-800 font-mono text-xs"></tbody></table></div></div>
-            </div>
-            <div class="lg:col-span-2 glass-panel p-6 rounded-xl flex flex-col h-[calc(100vh-240px)]"><h3 class="text-lg font-semibold text-gray-200 mb-4">Aperçu</h3><div class="overflow-auto flex-1 bg-black/30 border border-gray-800 rounded-lg p-4" id="report-preview-container"><p class="text-gray-500 text-sm italic">Configurez les filtres puis lancez l'aperçu ou l'export.</p></div></div>
-        </div>
-    </div>
-
-    <!-- CYBERSEC -->
-    <div id="cybersec" class="p-4 md:p-8 space-y-6 tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-cybersec" tabindex="-1">
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div class="lg:col-span-2 glass-panel p-6 rounded-xl border-l-4 border-l-emerald-500">
-                <h3 class="text-xl font-semibold mb-2 text-white">Posture de sécurité (réelle)</h3>
-                <p class="text-sm text-gray-400 mb-6">État effectif de l'infrastructure — sans allégation non implémentée.</p>
-                <div class="space-y-4">
-                    <div class="bg-gray-800/30 p-4 rounded-lg border border-gray-700"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-lock mr-2 text-emerald-400" aria-hidden="true"></i>Transport</h4><p class="text-sm text-gray-400 mt-1">État : <span id="tls-status-2" class="font-mono text-emerald-300">voir bas de menu</span>. TLS/WSS activable via <span class="font-mono">npm run gen-certs</span> (certificat de dév auto-signé).</p></div>
-                    <div class="bg-gray-800/30 p-4 rounded-lg border border-gray-700"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-link mr-2 text-emerald-400" aria-hidden="true"></i>Intégrité du registre</h4><p class="text-sm text-gray-400 mt-1">Chaînage SHA-256 + signature ECDSA P-256. Vérification live : <span id="ledger-integrity" class="font-mono">…</span></p></div>
-                    <div class="bg-gray-800/30 p-4 rounded-lg border border-gray-700"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-shield-halved mr-2 text-amber-400" aria-hidden="true"></i>Objectifs non encore atteints</h4><p class="text-sm text-gray-400 mt-1">mTLS mutuel réel, ISO 27001 certifiée, horodatage RFC 3161, conformité loi 001/2011 (données personnelles) : à implémenter avant toute mise en production. Non revendiqués comme effectifs.</p></div>
-                </div>
-            </div>
-            <div class="glass-panel p-6 rounded-xl"><h3 class="text-lg font-semibold mb-4 text-white">Alertes (anomalies)</h3><div class="space-y-3" id="alerts-container" aria-live="polite"></div></div>
-        </div>
-    </div>
-
-    <!-- PKI -->
-    <div id="pki" class="p-4 md:p-8 space-y-6 tab-content hidden" role="tabpanel" aria-labelledby="tab-btn-pki" tabindex="-1">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div class="glass-panel p-6 rounded-xl">
-                <h3 class="text-lg font-semibold mb-4 text-gray-200">Clé de signature du registre</h3>
-                <div class="bg-gray-800/40 p-4 rounded-lg border border-gray-700 text-sm space-y-2">
-                    <p><span class="text-gray-400">Usage :</span> signature de chaque enregistrement du registre chaîné.</p>
-                    <p><span class="text-gray-400">Algorithme :</span> <span class="font-mono text-emerald-300">ECDSA P-256 (SHA-256)</span></p>
-                    <p><span class="text-gray-400">Empreinte clé publique :</span> <span class="font-mono text-emerald-300" id="pki-fingerprint">—</span></p>
-                    <p class="text-[11px] text-gray-500">Clé de démonstration générée localement (data/keys). N'est pas émise par une autorité de certification officielle.</p>
-                </div>
-            </div>
-            <div class="glass-panel p-6 rounded-xl"><h3 class="text-lg font-semibold mb-4 text-gray-200">Clé publique (PEM)</h3><pre class="bg-black/40 p-3 rounded border border-gray-700 text-[10px] text-emerald-200 overflow-auto max-h-64" id="pki-pubkey">…</pre></div>
+    <!-- GEO (carte fixe) -->
+    <div id="geo" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1">
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-5 h-[72vh] lg:h-[calc(100vh-160px)]">
+            <div class="lg:col-span-3 glass-panel p-0 rounded-xl overflow-hidden relative"><div id="map"></div><div class="absolute bottom-4 left-4 glass-panel px-3 py-2 rounded-lg text-xs text-gray-300 z-[1000]"><span id="geo-stats">Cellules actives : 0 | Anomalies : 0</span></div></div>
+            <div class="glass-panel p-4 rounded-xl flex flex-col overflow-auto"><div id="view-geo"></div></div>
         </div>
     </div>
 </main>
 </div>
+<script>
+  // Styles de boutons de navigation (appliqués au runtime pour la cohérence).
+  document.querySelectorAll('.nav-btn').forEach(b => { b.className = 'nav-btn w-full flex items-center gap-3 px-3 py-2.5 text-gray-300 rounded-lg text-left hover:bg-gray-800'; b.setAttribute('aria-selected','false'); });
+</script>
 </body>
 </html>

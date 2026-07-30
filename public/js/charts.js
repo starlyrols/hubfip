@@ -1,72 +1,108 @@
 'use strict';
 
-// Graphiques (Chart.js auto-hébergé). Exposé en global pour app.js.
+// Graphiques (Chart.js auto-hébergé). Exposé en global pour app.js et les modules.
 window.HubCharts = (function () {
-  let fluxChart = null;
-  let ecoChart = null;
-  let barChart = null;
+  const COLOR = ['#10b981', '#3b82f6', '#f59e0b', '#a855f7', '#ef4444', '#14b8a6', '#ec4899', '#84cc16'];
+  let flux = null; let share = null; let typeC = null; let channelC = null;
+  const adhoc = {}; // graphiques de module par id de canvas
 
-  const COLOR = { Banque: '#3b82f6', MoMo: '#10b981', Microfinance: '#a855f7', Passerelle: '#9ca3af' };
+  // Couleurs d'habillage (ticks, grilles) lues depuis les variables CSS du thème
+  // courant — voir /css/theme.css. Les couleurs de SÉRIES (palette COLOR) sont
+  // saturées et restent lisibles sur les deux thèmes.
+  function themeColors() {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      tick: cs.getPropertyValue('--chart-tick').trim() || '#9ca3af',
+      grid: cs.getPropertyValue('--chart-grid').trim() || 'rgba(255,255,255,0.05)',
+    };
+  }
 
-  function init(operators) {
-    Chart.defaults.color = '#9ca3af';
+  function baseDefaults() {
+    if (!window.Chart) return;
+    Chart.defaults.color = themeColors().tick;
     Chart.defaults.font.family = 'Inter';
+  }
 
-    fluxChart = new Chart(document.getElementById('fluxChart'), {
-      type: 'line',
-      data: {
-        labels: Array.from({ length: 12 }, () => ''),
-        datasets: [{
-          label: 'Débit instantané (XAF)',
-          data: Array.from({ length: 12 }, () => 0),
-          borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)',
-          borderWidth: 2, tension: 0.4, fill: true, pointRadius: 0,
-        }],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false, animation: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' } }, x: { grid: { display: false } } },
-      },
-    });
+  // Bascule clair/sombre : réapplique les couleurs d'habillage aux graphiques
+  // vivants (les couleurs de grille sont figées à la création, Chart.defaults
+  // ne suffit pas).
+  function applyTheme() {
+    if (!window.Chart) return;
+    baseDefaults();
+    const t = themeColors();
+    for (const c of [flux, typeC, channelC, ...Object.values(adhoc)]) {
+      if (!c) continue;
+      if (c.options.scales && c.options.scales.y && c.options.scales.y.grid) c.options.scales.y.grid.color = t.grid;
+      c.update('none');
+    }
+    if (share) share.update('none');
+  }
 
-    ecoChart = new Chart(document.getElementById('ecosystemChart'), {
-      type: 'doughnut',
-      data: {
-        labels: ['Banques', 'Mobile Money', 'Microfinance', 'Passerelles'],
-        datasets: [{ data: [0, 0, 0, 0], backgroundColor: [COLOR.Banque, COLOR.MoMo, COLOR.Microfinance, COLOR.Passerelle], borderWidth: 0 }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, cutout: '72%', animation: false, plugins: { legend: { position: 'bottom', labels: { padding: 10, usePointStyle: true } } } },
-    });
+  function initDashboard() {
+    baseDefaults();
+    const fc = document.getElementById('fluxChart');
+    if (fc && !flux) {
+      flux = new Chart(fc, {
+        type: 'line',
+        data: { labels: Array.from({ length: 20 }, () => ''), datasets: [{ label: 'Volume/min', data: Array.from({ length: 20 }, () => 0), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)', borderWidth: 2, tension: 0.4, fill: true, pointRadius: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: themeColors().grid } }, x: { grid: { display: false } } } },
+      });
+    }
+    const sc = document.getElementById('shareChart');
+    if (sc && !share) {
+      share = new Chart(sc, { type: 'doughnut', data: { labels: [], datasets: [{ data: [], backgroundColor: COLOR, borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '68%', animation: false, plugins: { legend: { position: 'bottom', labels: { padding: 8, usePointStyle: true, font: { size: 10 } } } } } });
+    }
+    const tc = document.getElementById('typeChart');
+    if (tc && !typeC) typeC = barChart(tc, '#3b82f6');
+    const cc = document.getElementById('channelChart');
+    if (cc && !channelC) channelC = barChart(cc, '#a855f7');
+  }
 
-    barChart = new Chart(document.getElementById('barChart'), {
+  function barChart(el, color) {
+    return new Chart(el, {
       type: 'bar',
-      data: {
-        labels: operators.map((o) => o.name),
-        datasets: [{ label: 'Volume cumulé (XAF)', data: operators.map(() => 0), backgroundColor: operators.map((o) => COLOR[o.type] || '#9ca3af'), borderRadius: 4 }],
-      },
-      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { font: { size: 9 } }, grid: { display: false } } } },
+      data: { labels: [], datasets: [{ data: [], backgroundColor: color, borderRadius: 4 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: themeColors().grid } }, x: { ticks: { font: { size: 9 } }, grid: { display: false } } } },
     });
   }
 
-  function pushFlux(amount) {
-    if (!fluxChart) return;
-    const d = fluxChart.data.datasets[0].data;
-    d.push(amount); d.shift();
-    fluxChart.update('none');
+  function pushFlux(series) {
+    if (!flux || !series) return;
+    flux.data.labels = series.map(() => '');
+    flux.data.datasets[0].data = series.map((p) => p.sumXaf);
+    flux.update('none');
+  }
+  function setShare(byOperator) {
+    if (!share) return;
+    share.data.labels = byOperator.map((o) => o.name);
+    share.data.datasets[0].data = byOperator.map((o) => o.sumXaf);
+    share.update('none');
+  }
+  function setType(byType) {
+    if (!typeC) return;
+    typeC.data.labels = byType.map((t) => t.label || t.key);
+    typeC.data.datasets[0].data = byType.map((t) => t.sumXaf);
+    typeC.update('none');
+  }
+  function setChannel(byChannel) {
+    if (!channelC) return;
+    channelC.data.labels = byChannel.map((c) => c.key);
+    channelC.data.datasets[0].data = byChannel.map((c) => c.sumXaf);
+    channelC.update('none');
   }
 
-  function setEco(totals) {
-    if (!ecoChart) return;
-    ecoChart.data.datasets[0].data = [totals.Banque || 0, totals.MoMo || 0, totals.Microfinance || 0, totals.Passerelle || 0];
-    ecoChart.update('none');
+  // Graphique ad hoc pour un module (barres). Crée ou met à jour par id de canvas.
+  function moduleBar(canvasId, labels, data, color) {
+    baseDefaults();
+    const el = document.getElementById(canvasId);
+    if (!el) return;
+    if (adhoc[canvasId]) { adhoc[canvasId].destroy(); delete adhoc[canvasId]; }
+    adhoc[canvasId] = new Chart(el, {
+      type: 'bar',
+      data: { labels, datasets: [{ data, backgroundColor: color || COLOR, borderRadius: 4 }] },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: themeColors().grid } }, x: { ticks: { font: { size: 9 } }, grid: { display: false } } } },
+    });
   }
 
-  function setBar(operators, volById) {
-    if (!barChart) return;
-    barChart.data.datasets[0].data = operators.map((o) => volById[o.id] || 0);
-    barChart.update('none');
-  }
-
-  return { init, pushFlux, setEco, setBar };
+  return { COLOR, initDashboard, pushFlux, setShare, setType, setChannel, moduleBar, applyTheme };
 })();

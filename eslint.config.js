@@ -4,7 +4,7 @@ const js = require('@eslint/js');
 const globals = require('globals');
 
 module.exports = [
-  { ignores: ['node_modules/**', 'data/**', 'coverage/**'] },
+  { ignores: ['node_modules/**', 'data/**', 'coverage/**', '.claude/**'] },
   js.configs.recommended,
   {
     // Code serveur / modules / scripts / tests (Node, CommonJS)
@@ -31,6 +31,7 @@ module.exports = [
         L: 'readonly',
         HubCharts: 'writable',
         HubMap: 'writable',
+        SumoTheme: 'readonly',
       },
     },
   },

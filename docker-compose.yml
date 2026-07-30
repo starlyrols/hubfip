@@ -1,0 +1,46 @@
+# SUMo — déploiement avec reverse proxy TLS (Caddy).
+# Le navigateur parle HTTPS/WSS au proxy ; le proxy parle HTTP en réseau interne à
+# l'app (non exposée). Démarrage : `docker compose up -d --build` → https://localhost
+# PROTOTYPE / DÉMONSTRATION — données simulées.
+
+services:
+  app:
+    build: .
+    image: sumo-platform:latest
+    environment:
+      NODE_ENV: production
+      # Indique à l'app qu'elle est derrière un proxy TLS → cookies Secure + HSTS + trust proxy.
+      SUMO_TRUST_PROXY: "1"
+      # Origine(s) WebSocket autorisée(s) si vous servez un VRAI domaine (sinon localhost OK).
+      # CORS_ORIGINS: "https://momo.arcep.ga"
+      # Identifiants connecteurs (HMAC). Sinon auto-générés et persistés dans le volume.
+      # SUMO_API_KEY: "..."
+      # SUMO_API_SECRET: "..."
+    volumes:
+      - sumo-data:/app/data        # registre signé, clés, config, dossiers (persistant)
+    expose:
+      - "3000"                     # interne uniquement (pas de port publié)
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2-alpine
+    depends_on:
+      - app
+    ports:
+      - "80:80"                    # redirige vers HTTPS
+      - "443:443"                  # HTTPS/WSS
+    environment:
+      # Domaine servi. `localhost` par défaut (CA interne de Caddy, souverain/hors-ligne).
+      SUMO_DOMAIN: ${SUMO_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data           # persiste la CA interne / les certificats
+      - caddy-config:/config
+      # PKI souveraine : montez vos certificats et adaptez le Caddyfile (voir commentaires).
+      # - ./certs:/certs:ro
+    restart: unless-stopped
+
+volumes:
+  sumo-data:
+  caddy-data:
+  caddy-config:

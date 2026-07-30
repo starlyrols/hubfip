@@ -1,11 +1,11 @@
 {
-  "name": "hubfip-platform",
-  "version": "2.0.0",
-  "description": "HuBFIP — Plateforme de monitoring financier (PROTOTYPE / DÉMONSTRATION). Données simulées, ne reflète aucun flux réel.",
+  "name": "sumo-platform",
+  "version": "3.0.0",
+  "description": "SUMo — Supervision Unifiée du Mobile Money (modèle inspiré de M3). Plateforme de supervision des flux Mobile Money pour le régulateur télécom. PROTOTYPE / DÉMONSTRATION : données simulées, ne reflète aucun flux réel.",
   "main": "server.js",
   "type": "commonjs",
   "license": "SEE LICENSE IN LICENSE",
-  "author": "Prototype HuBFIP",
+  "author": "Prototype SUMo",
   "private": true,
   "engines": {
     "node": ">=20"
@@ -14,6 +14,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "gen-certs": "node scripts/gen-certs.js",
+    "import-org": "node scripts/import-arcep-org.js",
     "verify-ledger": "node scripts/verify-ledger.js",
     "lint": "eslint .",
     "test": "node --test"
@@ -25,6 +26,7 @@
     "express-rate-limit": "^7.5.1",
     "helmet": "^7.2.0",
     "leaflet": "^1.9.4",
+    "pg": "^8.22.0",
     "ws": "^8.16.0"
   },
   "devDependencies": {

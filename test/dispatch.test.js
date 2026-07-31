@@ -43,7 +43,8 @@ test('GET /api/v1/dispatch/state : 401 sans session, 403 hors admin système, 20
   assert.equal(r.status, 200);
   const j = await r.json();
   assert.equal(j.modules[0].id, 'monitoring');
-  assert.equal(j.modules[0].children.length, 13);
+  // Le nombre de sous-modules suit le registre (extension M14 comprise).
+  assert.equal(j.modules[0].children.length, require('../lib/modules').LEAF_MODULE_IDS.length);
   assert.equal(j.directions.length, 17);
   assert.ok(j.users.every((u) => u.username !== 'admin-systeme'), 'admin-systeme exclu des cibles');
   const dctlf = j.directions.find((d) => d.code === 'DCTLF');
@@ -90,14 +91,14 @@ test('Affectation individuelle : un agent gagne un module que sa direction n\'a 
   assert.equal((await get('/api/v1/qos', agdm)).status, 403);
 });
 
-test('Dispatcher « monitoring » (parent) = les 13 sous-modules, y compris admin/config', async () => {
+test('Dispatcher « monitoring » (parent) = tous les sous-modules, y compris admin/config', async () => {
   const admin = await authCookie('admin-systeme');
   const diai = await authCookie('diai');
 
   assert.equal((await get('/api/v1/config', diai)).status, 403);
   await put('/api/v1/dispatch/directions/DIAI', admin, { modules: ['monitoring'] });
   const me = await (await get('/api/v1/auth/me', diai)).json();
-  assert.equal(me.user.permissions.modules.length, 13);
+  assert.equal(me.user.permissions.modules.length, require('../lib/modules').LEAF_MODULE_IDS.length);
   assert.equal(me.user.permissions.canAdmin, true);
   assert.equal((await get('/api/v1/config', diai)).status, 200);
 

@@ -13,7 +13,7 @@
   let activeTab = 'observatoire';
   let geoReady = false;
 
-  const REFRESH = new Set(['observatoire', 'antifraude', 'qos', 'revenus', 'analytics', 'securite', 'registre', 'geo']);
+  const REFRESH = new Set(['observatoire', 'antifraude', 'qos', 'revenus', 'analytics', 'securite', 'registre', 'geo', 'mesures', 'tiers', 'reclamations', 'postal']);
   const TITLES = {
     observatoire: ['Observatoire', 'Statistiques de marché en temps réel'],
     operators: ['Opérateurs & moteurs', 'Plateformes Mobile Money et réseaux d\'agents'],
@@ -29,6 +29,10 @@
     securite: ['Sécurité & audit', 'Posture réelle, intégrité et journal d\'audit'],
     admin: ['Administration', 'Configuration des règles, tarifs et seuils'],
     dispatch: ['Dispatch des modules', 'Affectation des modules aux directions et aux comptes'],
+    mesures: ['Mesure indépendante (N3)', 'Sondes transactionnelles — le mesuré prime sur le déclaré'],
+    tiers: ['Accès des tiers (PSP)', 'Raccordements, tarifs de gros et non-discrimination'],
+    reclamations: ['Réclamations consommateurs', 'Suivi agrégé et corrélation aux incidents techniques'],
+    postal: ['Services financiers postaux', 'Réseau, activité, qualité et inclusion (service universel)'],
     aide: ['Aide & guide', 'Comprendre la plateforme et lire chaque module'],
   };
 
@@ -643,7 +647,199 @@
 
   // NB : « dispatch » est volontairement HORS de REFRESH — le poll de 4 s
   // écraserait l'état des cases à cocher en cours de manipulation.
-  const LOADERS = { observatoire: loadObservatoire, operators: loadOperators, revenus: loadRevenus, qos: loadQos, antifraude: loadAntifraude, investigation: loadInvestigation, analytics: loadAnalytics, connecteurs: loadConnecteurs, registre: loadRegistre, reporting: loadReporting, securite: loadSecurite, admin: loadAdmin, dispatch: loadDispatch, geo: loadGeo, aide: loadAide };
+  // ==========================================================================
+  // Module M14 — Services financiers numériques
+  // ==========================================================================
+  // Drapeau de confiance (M14/L7) : chaque valeur affichée porte sa source.
+  const flagBadge = (f) => {
+    const m = {
+      MESURE: ['MESURÉ', 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', 'Constaté par sonde indépendante (journal probant signé)'],
+      CONTROLE: ['CONTRÔLÉ', 'bg-sky-500/20 text-sky-300 border-sky-500/30', 'Recalculé par la plateforme depuis les données collectées'],
+      DECLARE: ['DÉCLARÉ', 'bg-amber-500/20 text-amber-300 border-amber-500/30', 'Transmis par l\'assujetti, non vérifié'],
+    };
+    const [label, cls, tip] = m[f] || m.DECLARE;
+    return `<span class="px-1.5 py-0.5 rounded text-[9px] border ${cls} font-bold align-middle" title="${esc(tip)}">${label}</span>`;
+  };
+  const pctOrDash = (v) => (v == null ? '—' : (100 * v).toFixed(1) + ' %');
+
+  async function loadMesures() {
+    const d = await getJSON('/api/v1/probes');
+    const opRows = table([
+      { label: 'Opérateur', key: 'name', render: (r) => `<span class="${esc(r.color || '')} font-medium">${esc(r.name)}</span>` },
+      { label: 'Succès déclaré (USSD)', render: (r) => `${pctOrDash(r.declared.successRate)} ${flagBadge('DECLARE')}` },
+      { label: 'Succès mesuré (USSD)', render: (r) => `${pctOrDash(r.measured.ussdSuccessRate)} ${flagBadge('MESURE')}` },
+      { label: 'Écart (pts)', render: (r) => (r.ecartDispoPts == null ? '—' : `<span class="${r.ecartDispoPts >= d.seuils.dispoPts ? 'text-red-300 font-bold' : 'text-gray-300'}">${(100 * r.ecartDispoPts).toFixed(1)}</span>`) },
+      { label: 'p95 mesuré', render: (r) => (r.measured.p95LatencyMs == null ? '—' : nf.format(r.measured.p95LatencyMs) + ' ms') },
+      { label: 'Constats tarifaires', render: (r) => `${nf.format(r.tarifConstats)} (écarts : <span class="${r.tarifEcarts ? 'text-red-300 font-bold' : 'text-emerald-300'}">${r.tarifEcarts}</span>)` },
+      { label: 'Verdict', render: (r) => (r.verdict === 'ECART'
+        ? `<span class="px-2 py-0.5 rounded text-[10px] bg-red-500/20 text-red-300 border border-red-500/30 font-bold">ÉCART</span>${r.contradictoireId ? ` <span class="text-[10px] text-gray-400 font-mono">${esc(r.contradictoireId)}</span>` : ''}`
+        : '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">CONFORME</span>') },
+    ], d.byOperator);
+    const chRows = table([
+      { label: 'Canal', key: 'canal', cls: 'font-mono text-gray-300' },
+      { label: 'Mesures', render: (r) => nf.format(r.total) },
+      { label: 'Taux de succès', render: (r) => `${pctOrDash(r.successRate)} ${flagBadge('MESURE')}` },
+      { label: 'Latence moyenne', render: (r) => (r.avgLatencyMs == null ? '—' : nf.format(r.avgLatencyMs) + ' ms') },
+      { label: 'p95', render: (r) => (r.p95LatencyMs == null ? '—' : nf.format(r.p95LatencyMs) + ' ms') },
+    ], d.byChannel);
+    const contra = table([
+      { label: 'Dossier', key: 'caseId', cls: 'font-mono text-emerald-300' },
+      { label: 'Objet', key: 'title' },
+      { label: 'Statut', render: (r) => `<span class="px-2 py-0.5 rounded text-[10px] border font-bold ${r.status === 'CLOS' ? 'bg-gray-500/20 text-gray-300 border-gray-500/30' : 'bg-red-500/20 text-red-300 border-red-500/30'}">${esc(r.status)}</span>` },
+      { label: 'Ouvert le', render: (r) => esc((r.createdAt || '').slice(0, 16).replace('T', ' ')) },
+    ], d.contradictoires);
+    const j = d.journal;
+    $('view-mesures').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${kpi('Campagnes exécutées', nf.format(d.campaign.count), 'border-t-emerald-500')}
+        ${kpi('Mesures retenues (fenêtre)', nf.format(d.campaign.retained), 'border-t-sky-500')}
+        ${kpi('Journal probant (scellés)', nf.format(j.total), 'border-t-indigo-500')}
+        ${kpi('Intégrité du journal', j.integrity && j.integrity.valid ? 'VALIDE' : 'ROMPUE', j.integrity && j.integrity.valid ? 'border-t-emerald-500' : 'border-t-red-500')}
+      </div>
+      <div class="mb-4 flex items-center gap-3 flex-wrap">
+        <button id="btn-campagne" class="bg-emerald-700 hover:bg-emerald-600 text-white rounded px-4 py-2 text-sm font-medium"><i class="fa-solid fa-satellite-dish mr-2"></i>Lancer une campagne</button>
+        <span class="text-xs text-gray-400">Le mesuré prime sur le déclaré : écart ≥ ${(100 * d.seuils.dispoPts).toFixed(0)} pt de disponibilité (ou constat tarifaire ≠ grille) → procédure contradictoire tracée.</span>
+      </div>
+      ${panel('Mesuré vs déclaré par opérateur (canal USSD)', opRows)}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+        ${panel('Qualité mesurée par canal', chRows)}
+        ${panel('Procédures contradictoires ouvertes (N3)', contra)}
+      </div>`;
+    const btn = $('btn-campagne');
+    if (btn) btn.addEventListener('click', async () => { btn.disabled = true; try { await sendJSON('/api/v1/probes/campaign', 'POST', {}); await loadMesures(); } catch (e) { console.error(e); } });
+  }
+
+  async function loadTiers() {
+    const d = await getJSON('/api/v1/thirdparty');
+    const demRows = table([
+      { label: 'Demande', key: 'id', cls: 'font-mono text-gray-300' },
+      { label: 'PSP', key: 'psp' },
+      { label: 'Hôte', key: 'hostOperatorId', cls: 'font-mono' },
+      { label: 'Canal', key: 'canal', cls: 'font-mono text-gray-400' },
+      { label: 'J0 → J3 (j)', render: (r) => (r.delaiJ3 == null ? `${nf.format(r.ageJours)} j (en cours)` : nf.format(r.delaiJ3) + ' j') },
+      { label: 'Statut', render: (r) => `<span class="px-2 py-0.5 rounded text-[10px] border font-bold ${r.statut === 'EN_SERVICE' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : r.statut === 'REFUSEE' ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'}">${esc(r.statut)}</span>` },
+      { label: 'Délais', render: (r) => (r.depassement ? '<span class="text-red-300 font-bold">DÉPASSÉ</span>' : '<span class="text-emerald-300">OK</span>') },
+    ], d.demandes);
+    const at04 = table([
+      { label: 'Canal', key: 'canal', cls: 'font-mono text-gray-300' },
+      { label: 'Wallet maison', render: (r) => `${pctOrDash(r.wallet.successRate)} · p95 ${r.wallet.p95LatencyMs == null ? '—' : nf.format(r.wallet.p95LatencyMs) + ' ms'}` },
+      { label: 'Canal PSP', render: (r) => `${pctOrDash(r.psp.successRate)} · p95 ${r.psp.p95LatencyMs == null ? '—' : nf.format(r.psp.p95LatencyMs) + ' ms'}` },
+      { label: 'Écart (pts)', render: (r) => (r.ecartPts == null ? '—' : `<span class="${r.discrimination ? 'text-red-300 font-bold' : 'text-gray-300'}">${(100 * r.ecartPts).toFixed(1)}</span> ${flagBadge('MESURE')}`) },
+      { label: 'Non-discrimination', render: (r) => (r.discrimination ? '<span class="text-red-300 font-bold">À INSTRUIRE</span>' : '<span class="text-emerald-300">CONFORME</span>') },
+    ], d.at04);
+    const tarifs = table([
+      { label: 'Canal', key: 'canal', cls: 'font-mono text-gray-300' },
+      { label: 'Unité', key: 'unite' },
+      { label: 'Tarif (XAF)', render: (r) => `${nf.format(r.tarifXaf)} ${flagBadge('DECLARE')}` },
+      { label: 'PSP', key: 'psp' },
+      { label: 'Observation', render: (r) => (r.signalement ? `<span class="text-amber-300">${esc(r.signalement)}</span>` : '—') },
+    ], d.at03);
+    const plaintes = table([
+      { label: 'Réf.', key: 'id', cls: 'font-mono text-gray-300' },
+      { label: 'PSP', key: 'psp' },
+      { label: 'Hôte', key: 'hostOperatorId', cls: 'font-mono' },
+      { label: 'Objet', key: 'objet' },
+      { label: 'Statut', key: 'statut', render: (r) => `<span class="text-amber-300 font-bold">${esc(r.statut)}</span>` },
+      { label: 'Échéance instruction', render: (r) => `${nf.format(r.joursRestants)} j` },
+    ], d.plaintes);
+    $('view-tiers').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${kpi('Demandes de raccordement', nf.format(d.at01.demandes), 'border-t-emerald-500')}
+        ${kpi('Délai médian J0→J3 (AT-01)', d.at01.delaiMedianJ3 == null ? '—' : nf.format(d.at01.delaiMedianJ3) + ' j', 'border-t-sky-500')}
+        ${kpi('En attente > 30 j (AT-02)', nf.format(d.at02.enAttentePlus30j), d.at02.enAttentePlus30j ? 'border-t-amber-500' : 'border-t-emerald-500')}
+        ${kpi('Délais dépassés', nf.format(d.at02.depassements), d.at02.depassements ? 'border-t-red-500' : 'border-t-emerald-500')}
+      </div>
+      ${panel(`Registre des raccordements — jalons réglementaires : accusé ≤ ${d.delaisReglementaires.j1JoursOuvres} j ouvrés · réponse ≤ ${d.delaisReglementaires.j2Jours} j · mise en service ≤ ${d.delaisReglementaires.j3Jours} j`, demRows)}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+        ${panel('AT-04 — Qualité comparée wallet maison vs canal PSP (mêmes cellules de mesure)', at04)}
+        ${panel('AT-03 — Conditions tarifaires de gros déclarées', tarifs)}
+      </div>
+      <div class="mt-5">${panel('Plaintes pour discrimination (instruction L8.3)', plaintes)}</div>`;
+  }
+
+  async function loadReclamations() {
+    const d = await getJSON('/api/v1/complaints');
+    const motifRows = table([
+      { label: 'Motif', key: 'label' },
+      { label: 'Reçues', render: (r) => nf.format(r.recues) },
+      { label: 'Closes', render: (r) => nf.format(r.closes) },
+    ], d.byMotif);
+    const opRows = table([
+      { label: 'Opérateur', render: (r) => `<span class="${esc(r.color || '')} font-medium">${esc(r.name)}</span>` },
+      { label: 'Reçues', render: (r) => nf.format(r.recues) },
+      { label: 'Liées à un incident', render: (r) => nf.format(r.liees) },
+      { label: 'Délai médian (j)', render: (r) => (r.delaiMedianJours == null ? '—' : r.delaiMedianJours) },
+    ], d.byOperator);
+    const corrRows = table([
+      { label: 'Code erreur', key: 'code', cls: 'font-mono text-gray-300' },
+      { label: 'Incident', key: 'label' },
+      { label: 'Réclamations corrélées', render: (r) => nf.format(r.count) },
+    ], d.correlation);
+    const recRows = table([
+      { label: 'Heure', render: (r) => esc(t(r.epoch)) },
+      { label: 'Réf.', key: 'id', cls: 'font-mono text-gray-400' },
+      { label: 'Opérateur', key: 'operatorId', cls: 'font-mono' },
+      { label: 'Canal', key: 'canal', cls: 'font-mono text-gray-400' },
+      { label: 'Province', key: 'province' },
+      { label: 'Motif', key: 'motif', cls: 'text-gray-300' },
+      { label: 'Incident', render: (r) => (r.lieAIncident ? `<span class="text-red-300 font-mono">${esc(r.errorCode || '')}</span>` : '—') },
+      { label: 'Statut', key: 'statut', render: (r) => (r.statut === 'CLOSE' ? '<span class="text-emerald-300">CLOSE</span>' : '<span class="text-amber-300">EN COURS</span>') },
+    ], d.recent);
+    $('view-reclamations').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${kpi('Réclamations reçues', nf.format(d.totals.recues) + ' ' + flagBadge(d.flag), 'border-t-emerald-500')}
+        ${kpi('En cours', nf.format(d.totals.enCours), 'border-t-amber-500')}
+        ${kpi('Liées à un incident technique', d.totals.tauxLieesIncidentPct + ' %', 'border-t-sky-500')}
+        ${kpi('Délai médian de traitement', (d.totals.delaiMedianJours == null ? '—' : d.totals.delaiMedianJours + ' j'), 'border-t-indigo-500')}
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        ${panel('Par motif', motifRows)}
+        ${panel('Par opérateur', opRows)}
+        ${panel('Corrélation aux incidents (codes d\'erreur)', corrRows)}
+      </div>
+      <div class="mt-5">${panel('Réclamations récentes (MSISDN masqués)', recRows)}</div>`;
+  }
+
+  async function loadPostal() {
+    const d = await getJSON('/api/v1/postal');
+    const provRows = table([
+      { label: 'Province', key: 'province' },
+      { label: 'Points de service', render: (r) => nf.format(r.points) },
+      { label: 'Dont accès financier exclusif', render: (r) => (r.exclusifs ? `<span class="text-emerald-300 font-bold">${nf.format(r.exclusifs)}</span>` : '—') },
+    ], d.sp01.parProvince);
+    const svcRows = table([
+      { label: 'Service', key: 'label' },
+      { label: 'Opérations', render: (r) => nf.format(r.count) },
+      { label: 'Valeur', render: (r) => xaf(r.sumXaf) + ' XAF' },
+    ], d.sp02.parService);
+    const dispoRows = table([
+      { label: 'Province', key: 'province' },
+      { label: 'Disponibilité SI guichets', render: (r) => `${pctOrDash(r.dispoSiPct)} ${flagBadge(r.flag)}` },
+      { label: 'Délai médian mandat', render: (r) => r.delaiMedianMandatHeures + ' h' },
+    ], d.sp03);
+    const exclRows = table([
+      { label: 'Localité', key: 'localite' },
+      { label: 'Province', key: 'province' },
+      { label: 'Bureau', key: 'pointId', cls: 'font-mono text-gray-400' },
+    ], d.sp06.localites);
+    $('view-postal').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${kpi('Points de service financiers', nf.format(d.sp01.points) + ' ' + flagBadge(d.sp01.flag), 'border-t-emerald-500')}
+        ${kpi('Contrôlés sur place (mystères)', nf.format(d.sp01.controlesSurPlace), 'border-t-sky-500')}
+        ${kpi('Passerelle poste ↔ mobile money', nf.format(d.sp05.count) + ' op.', 'border-t-indigo-500')}
+        ${kpi('Localités à accès exclusif (SP-06)', nf.format(d.sp06.localites.length), 'border-t-amber-500')}
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        ${panel('SP-01 — Réseau par province (' + esc(d.operateur.name) + ')', provRows)}
+        ${panel('SP-02 — Activité par service', svcRows)}
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+        ${panel('SP-03/04 — Qualité déclarée par province', dispoRows)}
+        ${panel('SP-06 — Contribution au service universel : seul accès financier de la localité', exclRows)}
+      </div>`;
+  }
+
+  const LOADERS = { observatoire: loadObservatoire, operators: loadOperators, revenus: loadRevenus, qos: loadQos, antifraude: loadAntifraude, investigation: loadInvestigation, analytics: loadAnalytics, connecteurs: loadConnecteurs, registre: loadRegistre, reporting: loadReporting, securite: loadSecurite, admin: loadAdmin, dispatch: loadDispatch, geo: loadGeo, aide: loadAide, mesures: loadMesures, tiers: loadTiers, reclamations: loadReclamations, postal: loadPostal };
 
   // ==========================================================================
   // Navigation

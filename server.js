@@ -28,6 +28,8 @@ const model = require('./lib/model');
 const simulator = require('./lib/simulator');
 const auth = require('./lib/auth');
 const users = require('./lib/users');
+const probes = require('./lib/probes');
+const postal = require('./lib/postal');
 const assignments = require('./lib/assignments');
 const nomenclature = require('./lib/nomenclature');
 const { createApp, originAllowed } = require('./lib/createApp');
@@ -50,6 +52,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 ledger.init();
 audit.init();
 cases.load();
+probes.init(); // journal probant N3 (chaîne signée dédiée)
 db.init().catch((e) => logger.warn('db.init.error', { error: e.message })); // entrepôt PostgreSQL optionnel
 
 // Reconstruction de l'entrepôt + des détecteurs depuis le registre signé.
@@ -151,6 +154,14 @@ function scheduleStream() {
 }
 scheduleStream();
 
+// ---- Module M14 : campagnes de sondes N3 + activité postale simulée --------
+const PROBES_MS = Number(process.env.SUMO_PROBES_MS) || 90_000;
+probes.runCampaign(); // première campagne au démarrage (l'UI a des mesures)
+postal.tick(60);
+const probesTimer = setInterval(() => {
+  try { probes.runCampaign(); postal.tick(); } catch (e) { logger.error('probes.campaign.failed', { error: e.message }); }
+}, PROBES_MS);
+
 server.listen(PORT, HOST, () => {
   const scheme = tlsEnabled ? 'https' : 'http';
   logger.info('server.started', { service: 'SUMo', scheme, host: HOST, port: PORT, tls: tlsEnabled });
@@ -173,6 +184,7 @@ function shutdown(signal) {
   logger.warn('server.shutdown', { signal });
   if (streamTimer) clearTimeout(streamTimer);
   clearInterval(heartbeat);
+  clearInterval(probesTimer);
   for (const ws of wss.clients) ws.close(1001, 'Server shutting down');
   db.close();
   server.close(() => process.exit(0));

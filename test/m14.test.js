@@ -9,6 +9,22 @@ const path = require('node:path');
 
 process.env.SUMO_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'sumo-m14-'));
 
+// Les sondes, les réclamations et l'activité postale sont toutes tirées au sort.
+// Sans graine, les assertions portant sur les biais simulés sont des paris :
+// sur ~40 mesures USSD, une série intégralement réussie (p ≈ 0,935^40 ≈ 7 %)
+// suffit à faire passer l'opérateur biaisé pour CONFORME. On fixe donc la source
+// d'aléa pour toute la suite — les tirages restent uniformes, mais reproductibles.
+// (crypto.randomUUID n'est pas concerné : les identifiants restent uniques.)
+Math.random = (() => {
+  let s = 0x2f6e2b1;
+  return () => {
+    s |= 0; s = (s + 0x6D2B79F5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+})();
+
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -52,12 +68,18 @@ test('probes : le rapport porte les drapeaux de confiance et détecte l\'opérat
   assert.ok(r.byOperator[2].tarifEcarts > 0, 'constats tarifaires ≠ grille');
 });
 
-test('probes : contradictoire dédupliqué — pas de nouveau dossier tant que le précédent est ouvert', () => {
-  const before = cases.list({ limit: 100 }).filter((c) => c.title.startsWith('CONTRADICTOIRE')).length;
+test('probes : contradictoire dédupliqué — un seul dossier par (opérateur, type) tant qu\'il est ouvert', () => {
+  // NB : compter le TOTAL des dossiers serait instable — une campagne ultérieure
+  // peut légitimement révéler un écart sur une AUTRE clé (latence, tarif). La
+  // garantie de déduplication porte sur la clé, pas sur le total.
+  const idsByKey = () => new Map(probes.report().contradictoires.map((c) => [c.key, c.caseId]));
+  const before = idsByKey();
+  assert.ok(before.size > 0, 'au moins un écart déjà constaté');
   probes.runCampaign();
   probes.runCampaign();
-  const after = cases.list({ limit: 100 }).filter((c) => c.title.startsWith('CONTRADICTOIRE')).length;
-  assert.equal(after, before, 'aucun doublon de dossier contradictoire');
+  const after = idsByKey();
+  for (const [key, caseId] of before) assert.equal(after.get(key), caseId, `dossier stable pour ${key}`);
+  assert.equal(after.size, new Set(after.values()).size, 'un dossier distinct par clé');
 });
 
 test('thirdparty : AT-01/AT-02 calculés depuis le registre, jalons dépassés détectés', () => {
@@ -84,13 +106,28 @@ test('complaints : un échec technique génère une réclamation corrélée (TDR
   let created = null;
   for (let i = 0; i < 200 && !created; i++) {
     const tdr = model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 5000, senderMsisdn: '+241074123456', status: 'FAILED', errorCode: '91' });
-    pipeline.enrich(tdr);
+    pipeline.ingest(tdr);
     created = complaints.report().recent.find((c) => c.tdrId === tdr.id) || null;
   }
   assert.ok(created, 'au moins une réclamation liée est née d\'un échec');
   assert.equal(created.lieAIncident, true);
   assert.equal(created.errorCode, '91');
   assert.ok(!/\+241\d{6}/.test(created.msisdnMasked), 'MSISDN jamais en clair');
+});
+
+test('complaints : le rejeu (enrich) ne fabrique aucune réclamation — seule l\'entrée (ingest) le fait', () => {
+  // Le rejeu au démarrage rappelle `enrich` sur des TDR déjà scellés : s'il
+  // produisait des réclamations, les agrégats changeraient à chaque redémarrage
+  // et se dupliqueraient. `enrich` doit rester sans effet de bord.
+  const before = complaints.size();
+  for (let i = 0; i < 300; i++) {
+    const tdr = model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 5000, senderMsisdn: '+241074123456', status: 'FAILED', errorCode: '91' });
+    pipeline.enrich(tdr);
+  }
+  assert.equal(complaints.size(), before, 'enrich n\'écrit pas dans le registre des réclamations');
+  // …mais l'enrichissement lui-même reste bien appliqué.
+  const tdr = model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 5000, senderMsisdn: '+241074123456', status: 'FAILED', errorCode: '91' });
+  assert.ok(Array.isArray(pipeline.enrich(tdr).alerts) && tdr.anomaly, 'enrich enrichit toujours le TDR');
 });
 
 test('complaints : rapport scopé par opérateur et corrélation par code d\'erreur', () => {

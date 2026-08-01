@@ -142,7 +142,7 @@ function scheduleStream() {
   const tick = () => {
     try {
       const tdr = simulator.generate();
-      pipeline.enrich(tdr);
+      pipeline.ingest(tdr); // TDR neuf : enrichissement + effets de bord (réclamations M14)
       const rec = ledger.append(tdr);
       warehouse.ingest(tdr);
       db.persist(tdr, rec); // entrepôt PostgreSQL optionnel (no-op si DATABASE_URL absent)

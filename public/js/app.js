@@ -13,7 +13,7 @@
   let activeTab = 'observatoire';
   let geoReady = false;
 
-  const REFRESH = new Set(['observatoire', 'antifraude', 'qos', 'revenus', 'analytics', 'securite', 'registre', 'geo', 'mesures', 'tiers', 'reclamations', 'postal']);
+  const REFRESH = new Set(['observatoire', 'antifraude', 'qos', 'revenus', 'analytics', 'securite', 'registre', 'geo', 'mesures', 'tiers', 'reclamations', 'postal', 'workflow']);
   const TITLES = {
     observatoire: ['Observatoire', 'Statistiques de marché en temps réel'],
     operators: ['Opérateurs & moteurs', 'Plateformes Mobile Money et réseaux d\'agents'],
@@ -29,6 +29,7 @@
     securite: ['Sécurité & audit', 'Posture réelle, intégrité et journal d\'audit'],
     admin: ['Administration', 'Configuration des règles, tarifs et seuils'],
     dispatch: ['Dispatch des modules', 'Affectation des modules aux directions et aux comptes'],
+    workflow: ['Gestion des dossiers', 'Standard BPM : corbeilles, statuts, SLA, avis et décisions'],
     mesures: ['Mesure indépendante (N3)', 'Sondes transactionnelles — le mesuré prime sur le déclaré'],
     tiers: ['Accès des tiers (PSP)', 'Raccordements, tarifs de gros et non-discrimination'],
     reclamations: ['Réclamations consommateurs', 'Suivi agrégé et corrélation aux incidents techniques'],
@@ -648,6 +649,108 @@
   // NB : « dispatch » est volontairement HORS de REFRESH — le poll de 4 s
   // écraserait l'état des cases à cocher en cours de manipulation.
   // ==========================================================================
+  // Module M15 — Gestion des dossiers (moteur de workflow BPM)
+  // ==========================================================================
+  const STATUT_STYLE = {
+    ENREGISTRE: 'bg-sky-500/20 text-sky-300 border-sky-500/30', RECEVABLE: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+    INCOMPLET: 'bg-amber-500/20 text-amber-300 border-amber-500/30', SUSPENDU_COMPLEMENT: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+    EN_INSTRUCTION: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30', EN_AVIS: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+    EN_VALIDATION: 'bg-purple-500/20 text-purple-300 border-purple-500/30', EN_ARBITRAGE_SE: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+    EN_DELIBERATION_CR: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+    ADOPTE: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', PUBLIE: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+    NOTIFIE: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', CLOS: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+    REJETE: 'bg-red-500/20 text-red-300 border-red-500/30', CLASSE_SANS_SUITE: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+    RETIRE: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+  };
+  const statutBadge = (s) => `<span class="px-2 py-0.5 rounded text-[10px] border font-bold ${STATUT_STYLE[s] || STATUT_STYLE.CLOS}">${esc(s.replace(/_/g, ' '))}</span>`;
+  const dDate = (e) => (e ? new Date(e).toISOString().slice(0, 10) : '—');
+  // Libellés des actions proposées par le serveur (allowedActions).
+  const WF_ACTIONS = {
+    COMPLETUDE_OK: ['Prononcer la recevabilité', null],
+    COMPLETUDE_KO: ['Demander un complément', { piecesManquantes: ['À préciser dans la demande'] }],
+    COMPLEMENT_RECU: ['Complément reçu', { note: 'Complément reçu du demandeur' }],
+    CLASSER_SANS_SUITE: ['Classer sans suite', { motif: 'Délai de complément échu' }],
+    QUALIFIER: ['Confirmer la qualification', {}],
+    TRANSMETTRE_AVIS: ['Transmettre (rapport + avis)', { rapport: 'Rapport d\'instruction versé au dossier' }],
+    DEMANDER_COMPLEMENT: ['Suspendre (complément)', { note: 'Complément demandé au demandeur' }],
+    RENDRE_AVIS: ['Rendre un avis FAVORABLE', { sens: 'FAVORABLE', motivation: 'Avis favorable' }],
+    VISER: ['Viser et transmettre au SE', null],
+    DECIDER_SE: ['Décider (SE)', { sens: 'ADOPTE', motivation: 'Décision du Secrétariat Exécutif' }],
+    DELIBERER_CR: ['Délibérer (CR) — adoption', { sens: 'ADOPTE', motivation: 'Délibération du Conseil' }],
+    RETIRER: ['Retirer le dossier', null],
+  };
+  let wfSelected = null;
+
+  async function wfAction(id, action) {
+    const def = WF_ACTIONS[action];
+    try {
+      await sendJSON(`/api/v1/workflow/dossiers/${id}/action`, 'POST', { action, params: def && def[1] ? def[1] : {} });
+      wfSelected = id;
+      await loadWorkflow();
+    } catch (e) { alert(e.message); }
+  }
+
+  function wfDetailHtml(d) {
+    const avis = (d.avis || []).length
+      ? `<table class="w-full text-xs mb-3"><thead><tr class="text-gray-500 text-[10px] uppercase"><th class="p-1 text-left">Avis</th><th class="p-1 text-left">Sens</th><th class="p-1 text-left">Motivation</th></tr></thead><tbody>${d.avis.map((a) => `<tr class="border-b border-gray-800/40"><td class="p-1 font-mono text-gray-300">${esc(a.direction)}</td><td class="p-1">${a.statut === 'ATTENDU' ? '<span class="text-amber-300">ATTENDU</span>' : esc(a.statut)}</td><td class="p-1 text-gray-400">${esc(a.motivation || '—')}</td></tr>`).join('')}</tbody></table>` : '';
+    const actions = (d.actions || []).map((a) => `<button data-wf-action="${esc(a)}" data-wf-id="${esc(d.id)}" class="bg-emerald-700 hover:bg-emerald-600 text-white rounded px-3 py-1.5 text-xs mr-2 mb-2">${esc((WF_ACTIONS[a] || [a])[0])}</button>`).join('') || '<span class="text-gray-500 text-xs italic">Aucune action pour votre profil au statut courant.</span>';
+    const suivi = (d.suivi || []).slice(-12).reverse().map((s) => `<tr class="border-b border-gray-800/40"><td class="p-1 text-gray-500">${esc(dDate(s.epoch))}</td><td class="p-1 font-mono text-gray-400">${esc(s.action)}</td><td class="p-1">${esc(s.de || '—')} → ${esc(s.vers || '—')}</td><td class="p-1 text-gray-400">${esc((s.note || '').slice(0, 90))}</td><td class="p-1 text-gray-500">${esc(s.acteur)}</td></tr>`).join('');
+    return `
+      <div class="flex items-start justify-between gap-3 flex-wrap mb-2">
+        <div><span class="font-mono text-emerald-300 text-sm">${esc(d.numero)}</span> ${statutBadge(d.statut)} ${d.sla.enRetard ? '<span class="px-2 py-0.5 rounded text-[10px] bg-red-500/20 text-red-300 border border-red-500/30 font-bold">EN RETARD</span>' : ''}
+        <p class="text-sm text-gray-200 mt-1">${esc(d.objet)}</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">${esc(d.typeLabel)} · pilote ${esc(d.directionPilote || '—')} · demandeur ${esc((d.demandeur || {}).nom || '—')} · échéance ${esc(dDate(d.sla.echeance))}</p></div>
+      </div>
+      ${d.decision ? `<p class="text-xs mb-2"><span class="font-bold ${d.decision.sens === 'ADOPTE' ? 'text-emerald-300' : 'text-red-300'}">${esc(d.decision.niveau)} — ${esc(d.decision.sens)}</span> <span class="text-gray-400">· acte signé électroniquement (${esc(d.decision.signature.slice(0, 34))}…)</span></p>` : ''}
+      ${avis}
+      <div class="mb-3">${actions}</div>
+      <p class="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Suivi (journal du dossier)</p>
+      <div class="overflow-auto max-h-52"><table class="w-full text-xs"><tbody>${suivi}</tbody></table></div>`;
+  }
+
+  async function loadWorkflow() {
+    const d = await getJSON('/api/v1/workflow');
+    const sel = wfSelected ? (d.dossiers.find((x) => x.id === wfSelected) || d.corbeille.find((x) => x.id === wfSelected)) : null;
+    const rowsOf = (list) => table([
+      { label: 'N°', key: 'numero', cls: 'font-mono text-emerald-300', render: (r) => `<a href="#" data-wf-open="${esc(r.id)}" class="font-mono text-emerald-300 hover:underline">${esc(r.numero)}</a>` },
+      { label: 'Type', render: (r) => esc(r.typeLabel) },
+      { label: 'Objet', render: (r) => esc(r.objet.slice(0, 60)) },
+      { label: 'Pilote', key: 'directionPilote', cls: 'font-mono text-gray-400' },
+      { label: 'Statut', render: (r) => statutBadge(r.statut) },
+      { label: 'Échéance', render: (r) => `${esc(dDate(r.sla.echeance))}${r.sla.enRetard ? ' <span class="text-red-300 font-bold">⏰</span>' : (r.drapeaux.includes('ALERTE_80') ? ' <span class="text-amber-300">!</span>' : '')}` },
+      { label: 'À faire', render: (r) => (r.actions.length ? `<span class="text-emerald-300 font-bold">${r.actions.length} action(s)</span>` : '—') },
+    ], list);
+    const typeOptions = d.types.map((t) => `<option value="${esc(t.id)}">${esc(t.label)} (${esc(t.decision)}, ${t.slaJours} j)</option>`).join('');
+    $('view-workflow').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${kpi('Dossiers en cours', nf.format(d.stats.encours), 'border-t-emerald-500')}
+        ${kpi('En retard (SLA échu)', nf.format(d.stats.enRetard), d.stats.enRetard ? 'border-t-red-500' : 'border-t-emerald-500')}
+        ${kpi('Ma corbeille (actions dues)', nf.format(d.corbeille.length), 'border-t-sky-500')}
+        ${kpi('Délai médian de clôture', d.stats.delaiMedianJours == null ? '—' : d.stats.delaiMedianJours + ' j', 'border-t-indigo-500')}
+      </div>
+      <div class="mb-4 flex items-end gap-2 flex-wrap">
+        <div><label class="text-gray-400 block mb-1 text-[10px] uppercase">Déposer un dossier</label>
+          <select id="wf-type" class="bg-gray-800 border border-gray-700 rounded p-2 text-white text-xs">${typeOptions}</select></div>
+        <input id="wf-objet" placeholder="Objet du dossier…" class="bg-gray-800 border border-gray-700 rounded p-2 text-white text-xs w-72">
+        <button id="wf-deposer" class="bg-emerald-700 hover:bg-emerald-600 text-white rounded px-4 py-2 text-xs font-medium">Déposer (accusé immédiat)</button>
+      </div>
+      ${sel ? panel('Dossier sélectionné', wfDetailHtml(sel)) : ''}
+      <div class="grid grid-cols-1 gap-5 ${sel ? 'mt-5' : ''}">
+        ${panel(`Ma corbeille — dossiers attendant MON action (${d.corbeille.length})`, rowsOf(d.corbeille))}
+        ${panel(`Dossiers visibles par mon profil (${d.dossiers.length}) — cloisonnement RG-16 appliqué`, rowsOf(d.dossiers))}
+      </div>`;
+    $('view-workflow').querySelectorAll('[data-wf-open]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); wfSelected = a.dataset.wfOpen; loadWorkflow(); }));
+    $('view-workflow').querySelectorAll('[data-wf-action]').forEach((b) => b.addEventListener('click', () => wfAction(b.dataset.wfId, b.dataset.wfAction)));
+    const dep = $('wf-deposer');
+    if (dep) dep.addEventListener('click', async () => {
+      try {
+        const r = await sendJSON('/api/v1/workflow/dossiers', 'POST', { typeId: $('wf-type').value, objet: $('wf-objet').value });
+        wfSelected = r.dossier.id; await loadWorkflow();
+      } catch (e) { alert(e.message); }
+    });
+  }
+
+  // ==========================================================================
   // Module M14 — Services financiers numériques
   // ==========================================================================
   // Drapeau de confiance (M14/L7) : chaque valeur affichée porte sa source.
@@ -839,7 +942,7 @@
       </div>`;
   }
 
-  const LOADERS = { observatoire: loadObservatoire, operators: loadOperators, revenus: loadRevenus, qos: loadQos, antifraude: loadAntifraude, investigation: loadInvestigation, analytics: loadAnalytics, connecteurs: loadConnecteurs, registre: loadRegistre, reporting: loadReporting, securite: loadSecurite, admin: loadAdmin, dispatch: loadDispatch, geo: loadGeo, aide: loadAide, mesures: loadMesures, tiers: loadTiers, reclamations: loadReclamations, postal: loadPostal };
+  const LOADERS = { observatoire: loadObservatoire, operators: loadOperators, revenus: loadRevenus, qos: loadQos, antifraude: loadAntifraude, investigation: loadInvestigation, analytics: loadAnalytics, connecteurs: loadConnecteurs, registre: loadRegistre, reporting: loadReporting, securite: loadSecurite, admin: loadAdmin, dispatch: loadDispatch, geo: loadGeo, aide: loadAide, mesures: loadMesures, tiers: loadTiers, reclamations: loadReclamations, postal: loadPostal, workflow: loadWorkflow };
 
   // ==========================================================================
   // Navigation

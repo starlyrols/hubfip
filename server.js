@@ -53,6 +53,7 @@ ledger.init();
 audit.init();
 cases.load();
 probes.init(); // journal probant N3 (chaîne signée dédiée)
+require('./lib/workflow').load(); // M15 — dossiers persistés (ensemencement au 1er démarrage)
 db.init().catch((e) => logger.warn('db.init.error', { error: e.message })); // entrepôt PostgreSQL optionnel
 
 // Reconstruction de l'entrepôt + des détecteurs depuis le registre signé.

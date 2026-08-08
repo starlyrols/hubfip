@@ -16,6 +16,7 @@ data/*.json
 
 # Espaces de travail d'agents (sessions Claude parallèles)
 .claude/worktrees/
+.omc/
 
 # Fichiers verrous Office (document ouvert)
 ~$*

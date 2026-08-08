@@ -13,6 +13,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "demo": "bash scripts/demo-tunnel.sh",
     "gen-certs": "node scripts/gen-certs.js",
     "import-org": "node scripts/import-arcep-org.js",
     "verify-ledger": "node scripts/verify-ledger.js",

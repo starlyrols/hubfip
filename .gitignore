@@ -6,6 +6,8 @@ data/keys/
 data/tls/
 data/*.jsonl
 data/*.json
+data/*.bak
+data-demo/
 
 # Secrets & environnement
 .env

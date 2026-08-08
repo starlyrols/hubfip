@@ -39,4 +39,6 @@ echo "  Actif tant que cette fenêtre reste ouverte (Ctrl+C pour tout arrêter).
 echo "  PROTOTYPE — données simulées ; toute personne ayant le lien y accède."
 echo "=============================================================="
 
-PORT="$PORT" SUMO_TRUST_PROXY=1 CORS_ORIGINS="$URL" npm start
+# Répertoire de données DÉDIÉ : la démo ne partage jamais le registre chaîné
+# avec une instance locale (deux écrivains simultanés rompraient la chaîne).
+PORT="$PORT" SUMO_DATA_DIR="${SUMO_DATA_DIR:-$PWD/data-demo}" SUMO_TRUST_PROXY=1 CORS_ORIGINS="$URL" npm start

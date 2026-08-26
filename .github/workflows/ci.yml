@@ -42,7 +42,7 @@ jobs:
       # des dépendances npm : la base Alpine et ses paquets système en portent
       # aussi, et c'est ce qui est réellement déployé.
       - name: Analyse de vulnérabilités de l'image (Trivy)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: sumo-platform:ci
           format: table

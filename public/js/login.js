@@ -21,13 +21,30 @@
 
   function goHome() { location.href = '/'; }
 
+  // Le second facteur n'apparaît QUE si le serveur l'exige : un champ toujours
+  // visible laisserait croire que tout le monde en porte un, et les profils qui
+  // n'en ont pas ont ici la même page qu'avant.
+  function askOtp() {
+    const field = $('otp-field');
+    if (!field) return;
+    field.classList.remove('hidden');
+    const input = $('otp');
+    if (input) { input.value = ''; input.focus(); }
+  }
+
   async function doLogin(ev) {
     ev.preventDefault();
     const username = $('username').value.trim();
     const password = $('password').value;
     if (!username || !password) return showError('Identifiant et mot de passe requis.');
-    const { ok, data } = await postJson('/api/v1/auth/login', { username, password });
+    const otpEl = $('otp');
+    const otp = otpEl && !$('otp-field').classList.contains('hidden') ? otpEl.value.trim() : undefined;
+
+    const { ok, data } = await postJson('/api/v1/auth/login', { username, password, otp });
     if (ok) return goHome();
+
+    if (data.code === 'TOTP_REQUIS') { askOtp(); return showError('Ce profil requiert un second facteur : saisissez votre code.'); }
+    if (data.code === 'TOTP_INVALIDE') { askOtp(); return showError('Code de second facteur invalide — vérifiez l\'heure de votre appareil.'); }
     showError(data.error || 'Identifiants invalides.');
   }
 

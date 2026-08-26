@@ -108,6 +108,9 @@
   function onInit(d) {
     if ($('tls-status')) $('tls-status').textContent = d.tls ? 'TLS actif (WSS)' : 'HTTP (dev, sans TLS)';
     if ($('ledger-alg') && d.ledger) $('ledger-alg').textContent = d.ledger.algorithm;
+    // Villes du référentiel + fond de carte éventuel : sans tuiles configurées,
+    // la carte se dessine sur un fond local (correctif P0 n°8).
+    HubMap.configure({ cities: d.cities, basemap: d.basemap });
     HubCharts.initDashboard();
   }
   function onTx(tx, silent) {
@@ -129,6 +132,28 @@
   // ==========================================================================
   // Modules (renderers)
   // ==========================================================================
+  // Couverture déclarative. Une assiette vide n'affiche PAS « 100 % » : sans
+  // transaction observée, il n'y a rien à certifier — et un indicateur au vert
+  // sur zéro donnée est exactement le genre de chiffre rassurant qui trompe.
+  function majCouverture(t) {
+    const el = $('kpi-coverage'); const note = $('kpi-coverage-note');
+    if (!el) return;
+    const c = t.declarationCoverage;
+    if (c == null) {
+      el.textContent = '—';
+      el.className = 'text-xl font-bold mt-1 text-gray-500';
+      if (note) note.textContent = 'aucune transaction dénouée sur la fenêtre';
+      return;
+    }
+    el.textContent = pct(c);
+    el.className = 'text-xl font-bold mt-1 ' + (c >= 0.99 ? 'text-emerald-300' : (c >= 0.95 ? 'text-amber-300' : 'text-red-300'));
+    if (note) {
+      note.textContent = t.feeUndeclared
+        ? `${nf.format(t.feeUndeclared)} sans frais déclarés`
+        : `${nf.format(t.feeDeclared)} transactions confrontées au barème`;
+    }
+  }
+
   async function loadObservatoire() {
     const s = await getJSON('/api/v1/stats?minutes=20');
     $('kpi-volume').textContent = xaf(s.totals.sumXaf) + ' XAF';
@@ -136,6 +161,7 @@
     $('kpi-success').textContent = pct(s.totals.successRate);
     $('kpi-fees').textContent = xaf(s.totals.feeXaf) + ' XAF';
     $('kpi-alerts').textContent = nf.format(s.totals.alerts || 0);
+    majCouverture(s.totals);
     HubCharts.pushFlux(s.series);
     HubCharts.setShare(s.byOperator);
     HubCharts.setType(s.byType);
@@ -185,7 +211,15 @@
       { label: 'Attendu', render: (r) => nf.format(r.feeExpected) },
       { label: 'Manque', render: (r) => `<span class="text-red-400 font-bold">${nf.format(r.gapXaf)}</span>` },
     ], disc.items);
-    $('view-revenus').innerHTML = cards
+    const couverture = d.declarationCoverage != null
+      ? `<div class="bg-gray-800/40 p-3 rounded border ${d.declarationCoverage >= 0.95 ? 'border-gray-700' : 'border-amber-500/40'} mb-5 text-sm">
+           <span class="font-semibold text-gray-200">Couverture déclarative : </span>
+           <span class="${d.declarationCoverage >= 0.95 ? 'text-emerald-300' : 'text-amber-300'} font-bold">${pct(d.declarationCoverage)}</span>
+           <span class="text-xs text-gray-400"> — part de l'assiette dont les frais ont été DÉCLARÉS, donc confrontables au barème.
+           ${d.totals.feeUndeclaredCount ? `<span class="text-amber-300">${nf.format(d.totals.feeUndeclaredCount)} transaction(s) sans frais déclarés — hors assiette, à réclamer aux assujettis.</span>` : 'Aucune transaction sans frais déclarés.'}</span>
+         </div>`
+      : '';
+    $('view-revenus').innerHTML = couverture + cards
       + panel('Assurance des revenus & redevances par opérateur', opTable, 'mb-5')
       + panel('Écarts récents (sous-déclaration de frais)', discTable);
   }
@@ -365,10 +399,31 @@
       ${panel('Injection authentifiée', '<p class="text-xs text-gray-400 leading-relaxed">Chaque opérateur pousse ses TDR via <span class="font-mono text-emerald-400">POST /api/v1/iso8583</span>, signés <span class="font-mono">HMAC-SHA256</span>. Les formats hétérogènes (dialectes Comviva/Ericsson/maison) sont harmonisés vers le modèle TDR commun, contrôlés (complétude), puis scellés au registre signé. Aucune connexion intrusive aux cœurs opérateurs.</p>')}</div>`;
   }
 
+  // Portée du prochain contrôle d'intégrité demandé depuis l'onglet Registre.
+  let verifyFull = false;
+
   async function loadRegistre() {
     const d = await getJSON('/api/v1/ledger?limit=80');
+    // Correctif C3 : ne jamais afficher « chaîne valide » sans dire SUR QUOI porte
+    // le contrôle. Une vérification bornée s'ancre sur le fichier lui-même et ne
+    // certifie pas l'historique antérieur — c'est ce qui avait laissé afficher
+    // « VALIDE » alors que la rupture était en amont de la fenêtre.
     let integrity = '<span class="text-gray-400">…</span>';
-    try { const v = await getJSON('/api/v1/ledger/verify'); integrity = v.valid ? `<span class="text-emerald-300 font-bold">Chaîne VALIDE — ${v.total} enregistrements</span>` : `<span class="text-red-300 font-bold">RUPTURE au seq ${v.brokenAt}</span>`; } catch { /* */ }
+    let integrityNote = '';
+    try {
+      const v = await getJSON('/api/v1/ledger/verify' + (verifyFull ? '?full=1' : ''));
+      if (!v.valid) {
+        integrity = `<span class="text-red-300 font-bold">RUPTURE (${esc(v.reason || 'inconnue')}) au seq ${v.brokenAt}</span>`;
+      } else if (v.anchored) {
+        integrity = `<span class="text-emerald-300 font-bold">Chaîne VALIDE depuis la genèse — ${nf.format(v.checked)} enregistrements</span>`;
+        integrityNote = `Chaînage et continuité de séquence contrôlés sur 100 % des enregistrements ; ${nf.format(v.signaturesChecked || 0)} signatures vérifiées.`;
+      } else {
+        integrity = `<span class="text-amber-300 font-bold">Contrôle PARTIEL — ${nf.format(v.checked)} derniers enregistrements conformes</span>`;
+        integrityNote = 'Portée bornée, ancrée sur le fichier lui-même : ne certifie PAS l\'historique antérieur. Utilisez « Vérifier depuis la genèse ».';
+      }
+      const sc = v.startupCheck;
+      if (sc) integrityNote += ` — Dernier contrôle intégral au démarrage : ${sc.valid ? 'conforme' : 'ROMPU'} (${new Date(sc.at).toLocaleString('fr-FR')}).`;
+    } catch { /* */ }
     const tab = table([
       { label: 'Seq', key: 'seq', cls: 'font-mono text-gray-500' },
       { label: 'Heure', render: (r) => t(r.payload.epoch) },
@@ -380,11 +435,16 @@
       { label: 'Statut', render: (r) => statusBadge(r.payload.status) },
     ], d.records);
     $('view-registre').innerHTML = panel('Intégrité du registre',
-      `<div class="flex items-center justify-between"><p class="text-sm">Chaînage SHA-256 + signature ECDSA P-256 · persistant. Intégrité : ${integrity}</p>
-       <button id="verify-btn" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-1.5 text-xs">Re-vérifier</button></div>
+      `<div class="flex items-center justify-between gap-3"><p class="text-sm">Chaînage SHA-256 + signature ECDSA P-256 · persistant. Intégrité : ${integrity}</p>
+       <div class="flex gap-2 shrink-0">
+         <button id="verify-btn" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-1.5 text-xs">Re-vérifier</button>
+         <button id="verify-full-btn" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-1.5 text-xs">Vérifier depuis la genèse</button>
+       </div></div>
+       ${integrityNote ? `<p class="text-[11px] text-amber-300/80 mt-2">${esc(integrityNote)}</p>` : ''}
        <p class="text-[11px] text-gray-500 mt-2">Total : ${nf.format(d.stats.total)} TDR scellés. Numéros masqués (minimisation des données).</p>`, 'mb-5')
       + panel('Derniers TDR scellés', tab);
-    if ($('verify-btn')) $('verify-btn').addEventListener('click', loadRegistre);
+    if ($('verify-btn')) $('verify-btn').addEventListener('click', () => { verifyFull = false; loadRegistre(); });
+    if ($('verify-full-btn')) $('verify-full-btn').addEventListener('click', () => { verifyFull = true; loadRegistre(); });
   }
 
   async function loadReporting() {
@@ -424,6 +484,70 @@
 
   function download(url) { const a = document.createElement('a'); a.href = url; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
 
+  // Cartes de posture. Chacune affiche l'état RÉEL renvoyé par l'API — y compris
+  // quand il est dégradé : un écran qui annonce une garantie non tenue est
+  // exactement le défaut que l'audit reprochait au dossier.
+  const carte = (icone, couleur, titre, corps) => `
+    <div class="bg-gray-800/40 p-3 rounded border border-gray-700">
+      <h4 class="font-semibold text-gray-200"><i class="fa-solid ${icone} mr-2 ${couleur}"></i>${titre}</h4>
+      <p class="text-xs text-gray-400 mt-1">${corps}</p>
+    </div>`;
+
+  function carteChiffrement(c) {
+    if (!c) return '';
+    const ok = c.passphrase;
+    return carte('fa-shield-halved', ok ? 'text-emerald-400' : 'text-red-400', 'Chiffrement au repos',
+      ok
+        ? `Paliers P2 et P3 chiffrés par clé de segment · clés privées en PKCS#8 chiffré (phrase : ${esc(c.source || 'configurée')}).<br><span class="text-gray-500">${esc(c.limite)}</span>`
+        : `<span class="text-red-300 font-semibold">MODE DÉGRADÉ</span> — aucune phrase secrète : clé de données et clés privées lisibles sur le volume. Ce n'est pas un chiffrement au repos.`);
+  }
+
+  function carteAncrage(a) {
+    if (!a) return '';
+    if (!a.anchored) {
+      return carte('fa-stamp', 'text-amber-400', 'Ancrage externe',
+        'Aucun reçu émis. Un registre signé n\'est pas opposable à son propre exploitant tant qu\'une racine n\'a pas été déposée chez un tiers.');
+    }
+    return a.valid
+      ? carte('fa-stamp', 'text-emerald-400', 'Ancrage externe',
+        `Concordance vérifiée avec le reçu du rang ${nf.format(a.receipt.seq)}${a.receipt.emittedAt ? ' (' + esc(new Date(a.receipt.emittedAt).toLocaleString('fr-FR')) + ')' : ''}.<br><span class="text-gray-500">Le dépôt du reçu chez un tiers reste un acte organisationnel.</span>`)
+      : carte('fa-stamp', 'text-red-400', 'Ancrage externe',
+        `<span class="text-red-300 font-semibold">ÉCART DÉTECTÉ</span> — ${esc(a.reason)}`);
+  }
+
+  function carteConservation(r) {
+    if (!r || !r.politique) return '';
+    const dus = (r.aPurger || []).length;
+    const paliers = Object.entries(r.politique)
+      .map(([t, p]) => `${t} : ${p.moisConservation} mois · ${p.purges} purgé(s)`).join(' — ');
+    return carte('fa-folder-open', dus ? 'text-amber-400' : 'text-emerald-400', 'Conservation & effacement',
+      `${esc(paliers)}.<br>${dus ? `<span class="text-amber-300">${dus} segment(s) au-delà de l'échéance</span>` : 'Aucune échéance dépassée'} · effacement cryptographique par clé de segment.`);
+  }
+
+  function carteCanal(c) {
+    if (!c) return '';
+    const propre = c.clesDistinctes === c.connecteurs;
+    return carte('fa-plug', propre ? 'text-emerald-400' : 'text-red-400', 'Canal d\'ingestion',
+      `${c.connecteurs} assujettis · ${c.clesDistinctes} clé(s) distincte(s)${propre ? '' : ' <span class="text-red-300 font-semibold">— SECRET PARTAGÉ</span>'} · anti-rejeu ${Math.round(c.antiRejeu.fenetreMs / 1000)} s · ${c.avecMtls}/${c.connecteurs} sous mTLS.`);
+  }
+
+  function carteIdentites(i) {
+    if (!i) return '';
+    const propre = i.secretsDistincts === i.comptes;
+    const alertes = [];
+    if (i.changementRequis) alertes.push(`${i.changementRequis} secret(s) initial(aux) non changé(s)`);
+    if (i.expires) alertes.push(`${i.expires} expiré(s)`);
+    if (i.verrouilles) alertes.push(`${i.verrouilles} verrouillé(s)`);
+    return carte('fa-user-shield', propre ? 'text-emerald-400' : 'text-red-400', 'Identités',
+      `${i.comptes} comptes · ${i.secretsDistincts} secret(s) distinct(s)${propre ? '' : ' <span class="text-red-300 font-semibold">— IMPUTABILITÉ PERDUE</span>'} · second facteur ${i.totpActifs}/${i.totpRequis}.${alertes.length ? '<br><span class="text-amber-300">' + esc(alertes.join(' · ')) + '</span>' : ''}${i.modeDemonstration ? '<br><span class="text-gray-500">Mode démonstration : secret commun, contraintes levées.</span>' : ''}`);
+  }
+
+  function carteLecture(l) {
+    if (!l) return '';
+    return carte('fa-gauge-high', l.queued >= l.queueMax ? 'text-amber-400' : 'text-emerald-400', 'Lecture du registre',
+      `Parcours hors du fil principal · ${l.queued}/${l.queueMax} en file · délai max ${Math.round(l.timeoutMs / 1000)} s.`);
+  }
+
   async function loadSecurite() {
     const s = await getJSON('/api/v1/security');
     const au = await getJSON('/api/v1/audit?limit=80');
@@ -434,6 +558,12 @@
       <div class="bg-gray-800/40 p-3 rounded border border-gray-700"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-clipboard-check mr-2 ${aud.valid ? 'text-emerald-400' : 'text-red-400'}"></i>Journal d'audit</h4><p class="text-xs text-gray-400 mt-1">${aud.valid ? 'Chaîne valide' : 'RUPTURE seq ' + aud.brokenAt} · ${nf.format(s.audit.total)} évènements (inviolable)</p></div>
       <div class="bg-gray-800/40 p-3 rounded border border-gray-700"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-user-lock mr-2 text-emerald-400"></i>Minimisation des données</h4><p class="text-xs text-gray-400 mt-1">MSISDN masqués par défaut. Révélation : ${esc(s.dataMinimization.revealRoles.join(', '))} — journalisée.</p></div>
       <div class="bg-gray-800/40 p-3 rounded border border-gray-700"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-database mr-2 ${s.persistence && s.persistence.enabled ? 'text-emerald-400' : 'text-gray-400'}"></i>Entrepôt PostgreSQL</h4><p class="text-xs text-gray-400 mt-1">${s.persistence && s.persistence.enabled ? ('Actif — ' + nf.format(s.persistence.rows || 0) + ' lignes persistées') : 'Désactivé (stockage en mémoire) — activer via <span class="font-mono">DATABASE_URL</span> / <span class="font-mono">make up-db</span>'}</p></div>
+      ${carteChiffrement(s.chiffrementAuRepos)}
+      ${carteAncrage(s.ancrageExterne)}
+      ${carteConservation(s.conservation)}
+      ${carteCanal(s.canalIngestion)}
+      ${carteIdentites(s.identites)}
+      ${carteLecture(s.lectureRegistre)}
       <div class="bg-gray-800/40 p-3 rounded border border-gray-700 md:col-span-2"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-400"></i>Objectifs non encore atteints (honnêteté)</h4><ul class="text-xs text-gray-400 mt-1 list-disc list-inside">${s.notImplemented.map((x) => '<li>' + esc(x) + '</li>').join('')}</ul></div>
     </div>`;
     const auditTable = table([

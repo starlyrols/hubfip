@@ -6,7 +6,9 @@
    accents. data-theme est posé avant le premier rendu par /js/theme.js.
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* Correctif P0 n°8 : Inter est auto-hébergée et déclarée dans /css/tailwind.css.
+   L'import Google Fonts qui figurait ici signalait chaque ouverture de session à
+   un tiers étranger — donnée de fréquentation d'une autorité de régulation. */
 
 /* ---- Jetons ---------------------------------------------------------------- */
 :root {
@@ -156,3 +158,41 @@ html[data-theme="light"] .border-gray-800\/40 { border-color: rgba(226, 232, 240
 html[data-theme="light"] .border-gray-800\/60 { border-color: rgba(226, 232, 240, 0.85); }
 html[data-theme="light"] .border-gray-500\/30 { border-color: rgba(100, 116, 139, 0.35); }
 html[data-theme="light"] .divide-gray-800\/60 > :not([hidden]) ~ :not([hidden]) { border-color: rgba(226, 232, 240, 0.85); }
+
+/* ---- Fond de carte local (correctif P0 n°8) --------------------------------
+   Sans tuiles externes, l'orientation vient du graticule et des noms de villes.
+   Les libellés sont des divIcon Leaflet : ils doivent rester lisibles sur les
+   deux thèmes sans jamais peindre de fond. */
+.map-label {
+  color: rgba(255, 255, 255, .45);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .03em;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .6);
+  background: none;
+  border: 0;
+  pointer-events: none;
+}
+.map-label-light {
+  color: rgba(15, 23, 42, .5);
+  text-shadow: 0 1px 2px rgba(255, 255, 255, .8);
+}
+.map-popup { font-size: 12px; }
+
+/* Étiquettes de voisinage du fond local (frontières simplifiées). */
+.map-label-pays {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .22em;
+  color: rgba(255, 255, 255, .28);
+  text-align: center;
+}
+.map-label-light.map-label-pays { color: rgba(15, 23, 42, .32); }
+
+/* Mention réglementaire du fond local (contrôle d'attribution Leaflet). */
+.leaflet-control-attribution {
+  background: transparent !important;
+  color: var(--muted) !important;
+  font-size: 9.5px !important;
+}

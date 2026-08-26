@@ -16,6 +16,7 @@ require('../lib/audit').init();
 const model = require('../lib/model');
 const users = require('../lib/users');
 const { createApp } = require('../lib/createApp');
+const { externalInput } = require('./helpers');
 
 function listen(app) { return new Promise((resolve) => { const s = http.createServer(app); s.listen(0, () => resolve(s)); }); }
 const base = (s) => `http://127.0.0.1:${s.address().port}`;
@@ -76,8 +77,8 @@ test('GET /api/v1/ledger exige une session', async () => {
 });
 
 test('Le registre est cloisonné sur l’opérateur connecté', async () => {
-  ledger.append(model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 1000, source: 'EXTERNAL' }));
-  ledger.append(model.buildTDR({ operatorId: 'moov', type: 'P2P', amount: 2000, source: 'EXTERNAL' }));
+  ledger.append(model.buildTDR(externalInput({ senderOperatorId: 'airtel', amount: 1000 })));
+  ledger.append(model.buildTDR(externalInput({ senderOperatorId: 'moov', amount: 2000, senderMsisdn: '+241062111111' })));
   const s = await listen(createApp({ demoLogin: true, serveStatic: false }));
   const login = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'airtel' }) });
   const cookie = cookieOf(login);

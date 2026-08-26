@@ -40,13 +40,26 @@ require('../lib/ledger').init();
 require('../lib/audit').init();
 cases.load();
 
-test('probes : une campagne produit des mesures scellées dans un journal probant valide', () => {
+test('probes : une campagne est scellée d\'un bloc dans un journal probant valide', () => {
+  const avant = probes.journal.stats().total;
   const c = probes.runCampaign();
   assert.ok(c.measurements > 0, 'des mesures sont produites');
   assert.equal(probes.size() > 0, true);
+
+  // Correctif P1 n°17 : l'unité probante est la CAMPAGNE, pas la mesure isolée.
+  // Une seule signature et une seule écriture, au lieu d'une par mesure.
+  assert.equal(probes.journal.stats().total, avant + 1, 'un enregistrement par campagne');
+
   const integrity = probes.journal.verifyChain({ limit: 1000 });
   assert.equal(integrity.valid, true);
-  assert.ok(integrity.checked >= c.measurements, 'chaque mesure est scellée');
+
+  // Le contenu probant reste intégral : toutes les mesures sont dans le bloc.
+  const dernier = probes.journal.getRecent(1)[0];
+  assert.equal(dernier.payload.kind, 'CAMPAGNE_N3');
+  assert.equal(dernier.payload.mesures.length, c.measurements, 'aucune mesure perdue à la compaction');
+  for (const champ of ['operatorId', 'canal', 'province', 'success', 'latencyMs', 'feeCharged']) {
+    assert.ok(champ in dernier.payload.mesures[0], `la mesure conserve « ${champ} »`);
+  }
 });
 
 test('probes : le rapport porte les drapeaux de confiance et détecte l\'opérateur en écart', () => {

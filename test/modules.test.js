@@ -17,13 +17,23 @@ const warehouse = require('../lib/warehouse');
 const revenue = require('../lib/revenue');
 const audit = require('../lib/audit');
 audit.init();
+const { contractRecord } = require('./helpers');
 
 test('normalize : harmonise un dialecte opérateur (a_party/amt/service/bearer)', () => {
-  const r = normalize.normalizeObject({ a_party: '+241074111111', b_party: '+241074222222', amt: 75000, service: 'cashout', bearer: 'app' }, { operatorId: 'airtel' });
-  assert.equal(r.ok, true);
+  const r = normalize.normalizeObject(
+    contractRecord({ a_party: '+241074111111', b_party: '+241074222222', amt: 75000, service: 'cashout', bearer: 'app',
+      sender_msisdn: undefined, receiver_msisdn: undefined, transaction_type: undefined, channel: undefined, amount: undefined,
+      transaction_id: 'X-1', fee_amount: 400, tax_amount: 72 }),
+    { operatorId: 'airtel' },
+  );
+  assert.equal(r.ok, true, r.error);
   assert.equal(r.input.type, 'CASHOUT');
   assert.equal(r.input.channel, 'APP');
   assert.equal(r.input.amount, 75000);
+  // Correctif A1 : l'identifiant de l'assujetti et les frais déclarés sont conservés.
+  assert.equal(r.input.operatorRef, 'X-1');
+  assert.equal(r.input.feeDeclared, 400);
+  assert.equal(r.input.taxDeclared, 72);
 });
 
 test('normalize : rejette un enregistrement sans montant', () => {
@@ -80,28 +90,34 @@ test('config : rejette intervalMs=0 et highValueXaf=0 (champ vidé du formulaire
 });
 
 test('normalize : cityName transporte la géographie pour une injection externe', () => {
-  const r = normalize.normalizeObject({ a_party: '+241074111111', amt: 5000, ville: 'oyem' }, { operatorId: 'airtel' });
-  assert.equal(r.ok, true);
+  const r = normalize.normalizeObject(contractRecord({ ville: 'oyem' }), { operatorId: 'airtel' });
+  assert.equal(r.ok, true, r.error);
   assert.equal(r.input.cityName, 'Oyem');
   const tdr = model.buildTDR(r.input);
   assert.equal(tdr.cellOrigin.city, 'Oyem');
+  assert.equal(tdr.provenance.cellOrigin, 'DEDUIT');
 });
 
 test('model : fromIso8583 respecte la grille tarifaire transmise (feeGrid)', () => {
   const base = model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 100000, senderMsisdn: '+241074111111' });
   const grid = { P2P: { pct: 2.0, flat: 0, min: 0, cap: 0 } };
-  const tdr = model.fromIso8583(base.iso8583.message, { operatorId: 'airtel', feeGrid: grid });
+  const tdr = model.fromIso8583(base.iso8583.message, { operatorId: 'airtel', channel: 'USSD', feeDeclared: 1500, taxDeclared: 270, feeGrid: grid });
   assert.equal(tdr.fee.expected, 2000);
 });
 
-test('cases : les contreparties sont agrégées par MSISDN réel, pas par libellé masqué', () => {
+test('cases : les contreparties sont agrégées par MSISDN réel, pas par libellé masqué', async () => {
   const ledger = require('../lib/ledger');
   ledger.init();
   const cases = require('../lib/cases');
+  const scanner = require('../lib/scanner');
   const subject = '+241074000010';
   // Deux contreparties distinctes qui partagent le même libellé masqué (+241074****56).
   ledger.append(model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 1000, senderMsisdn: subject, receiverMsisdn: '+241074123456' }));
   ledger.append(model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 2000, senderMsisdn: subject, receiverMsisdn: '+241074999956' }));
-  const chain = cases.traceChain(subject, { reveal: false });
+  const chain = await cases.traceChain(subject, { reveal: false });
   assert.equal(chain.counterparties.length, 2);
+  // Le parcours est déporté (correctif D1) : son coût réel est remonté à l'appelant.
+  assert.equal(typeof chain.scanStats.scannedRecords, 'number');
+  assert.equal(chain.scanStats.truncated, false);
+  scanner.close();
 });

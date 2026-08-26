@@ -38,10 +38,21 @@ test('buildTDR : montant invalide => exception', () => {
 
 test('fromIso8583 : reconstruit un TDR depuis un message ISO 8583', () => {
   const src = model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 50000 });
-  const tdr = model.fromIso8583(src.iso8583.message, { operatorId: 'airtel' });
+  // Le canal, les frais et la taxe ne sont pas portés par la norme ISO 8583 :
+  // le contrat impose de les transmettre dans l'enveloppe d'injection.
+  const tdr = model.fromIso8583(src.iso8583.message, { operatorId: 'airtel', channel: 'USSD', feeDeclared: 250, taxDeclared: 45 });
   assert.equal(tdr.amountXaf, 50000);
   assert.equal(tdr.source, 'EXTERNAL');
   assert.equal(tdr.operator.id, 'airtel');
+  assert.equal(tdr.fee.amount, 250);
+  assert.equal(tdr.provenance.fee, 'DECLARE');
+  // L'horodatage provient du DE7 du message, pas de l'heure de réception.
+  assert.equal(tdr.provenance.datetime, 'DECLARE');
+});
+
+test('fromIso8583 : sans canal déclaré, le TDR externe est refusé (contrat)', () => {
+  const src = model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 50000 });
+  assert.throws(() => model.fromIso8583(src.iso8583.message, { operatorId: 'airtel' }), /Canal non reconnu/);
 });
 
 test('toPublic : masque le MSISDN par défaut, le révèle sur demande', () => {

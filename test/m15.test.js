@@ -68,7 +68,9 @@ test('workflow : un avis avec réserves renvoie en instruction ; un type CR exig
   wf.executer(d.id, 'VISER', {}, DM);
   wf.executer(d.id, 'DECIDER_SE', { sens: 'ADOPTE' }, SE);
   assert.equal(wf.get(d.id).statut, 'EN_DELIBERATION_CR', 'type à décision CR : le SE ne peut pas conclure seul');
-  assert.throws(() => wf.executer(d.id, 'DELIBERER_CR', { sens: 'ADOPTE' }, SE), /Conseil de Régulation/);
+  // Correctif B4 : le refus intervient désormais à la porte (matrice statut × rôle),
+  // avant même d'atteindre la garde interne de la transition.
+  assert.throws(() => wf.executer(d.id, 'DELIBERER_CR', { sens: 'ADOPTE' }, SE), /non autorisée pour votre profil/);
   wf.executer(d.id, 'DELIBERER_CR', { sens: 'REJETE', motivation: 'non fondé' }, CR);
   assert.equal(wf.get(d.id).statut, 'CLOS');
   assert.equal(wf.get(d.id).decision.sens, 'REJETE');
@@ -77,10 +79,10 @@ test('workflow : un avis avec réserves renvoie en instruction ; un type CR exig
 test('workflow : gardes de rôles — avis réservé à la direction sollicitée, qualification au SE', () => {
   const d = wf.deposer({ typeId: 'TARIF', objet: 'Test — gardes de rôles', demandeur: { categorie: 'OPERATEUR', nom: 'x' } }, 'test');
   wf.executer(d.id, 'COMPLETUDE_OK', {}, SE);
-  assert.throws(() => wf.executer(d.id, 'QUALIFIER', {}, DRH), /Secrétariat Exécutif/);
+  assert.throws(() => wf.executer(d.id, 'QUALIFIER', {}, DRH), /non autorisée pour votre profil|Dossier introuvable/);
   wf.executer(d.id, 'QUALIFIER', {}, SE);
   wf.executer(d.id, 'TRANSMETTRE_AVIS', { rapport: 'r' }, DM);
-  assert.throws(() => wf.executer(d.id, 'RENDRE_AVIS', { sens: 'FAVORABLE' }, DRH), /Aucun avis attendu de la direction/);
+  assert.throws(() => wf.executer(d.id, 'RENDRE_AVIS', { sens: 'FAVORABLE' }, DRH), /non autorisée pour votre profil|Dossier introuvable/);
 });
 
 test('workflow : la suspension pour complément arrête l\'horloge SLA (RG-10)', () => {

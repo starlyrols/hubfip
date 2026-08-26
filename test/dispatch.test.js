@@ -20,6 +20,7 @@ ledger.init();
 const audit = require('../lib/audit');
 audit.init();
 const model = require('../lib/model');
+const { externalInput } = require('./helpers');
 const { createApp } = require('../lib/createApp');
 
 const app = createApp({ tlsEnabled: false, serveStatic: false, demoLogin: true, broadcast() {} });
@@ -133,8 +134,8 @@ test('Chaque dispatch est journalisé (audit chaîné) avec le diff added/remove
 });
 
 test('Opérateur : défauts individuels actifs et cloisonnement operatorId intact', async () => {
-  ledger.append(model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 1000, source: 'EXTERNAL' }));
-  ledger.append(model.buildTDR({ operatorId: 'moov', type: 'P2P', amount: 2000, source: 'EXTERNAL' }));
+  ledger.append(model.buildTDR(externalInput({ senderOperatorId: 'airtel', amount: 1000 })));
+  ledger.append(model.buildTDR(externalInput({ senderOperatorId: 'moov', amount: 2000, senderMsisdn: '+241062111111' })));
   const airtel = await authCookie('airtel');
 
   assert.equal((await get('/api/v1/qos', airtel)).status, 200, 'défaut individuel opérateur');

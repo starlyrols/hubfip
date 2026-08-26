@@ -24,8 +24,81 @@
 	# renseignez un email dans le bloc global : `{ email admin@votre-domaine }`.
 
 	encode gzip
+
+	# --- En-têtes de sécurité au proxy (correctif P2 n°24) -------------------
+	# L'application pose déjà sa CSP et son HSTS ; le proxy ajoute ce qui relève
+	# de la couche transport et retire ce qui renseigne un attaquant.
+	header {
+		-Server
+		-X-Powered-By
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+		Permissions-Policy "geolocation=(), camera=(), microphone=(), payment=(), usb=()"
+	}
+
+	# --- Limitation de débit --------------------------------------------------
+	# L'application limite déjà par session et par connecteur ; une limitation AU
+	# PROXY protège en amont, avant que la requête n'atteigne Node — c'est elle
+	# qui compte face à une inondation.
+	#
+	# Elle exige le module `caddy-ratelimit`, absent de l'image de base. Construire :
+	#   xcaddy build --with github.com/mholt/caddy-ratelimit
+	# puis décommenter :
+	#
+	# rate_limit {
+	# 	zone ingestion {
+	# 		match { path /api/v1/iso8583* }
+	# 		key    {http.request.header.X-Sumo-Key}
+	# 		events 6000
+	# 		window 1m
+	# 	}
+	# 	zone console {
+	# 		match { path /api/v1/* }
+	# 		key    {remote_host}
+	# 		events 600
+	# 		window 1m
+	# 	}
+	# }
+	#
+	# À défaut de module, un pare-feu applicatif (WAF) ou une limitation au
+	# niveau du répartiteur de charge remplit le même office.
+
+	# --- mTLS SUR LE CANAL D'INGESTION (correctif P1 n°11) -------------------
+	# Le canal qui porte la preuve doit être authentifié DANS LES DEUX SENS : la
+	# signature HMAC prouve la détention d'un secret, pas l'identité du poste. En
+	# exigeant un certificat client émis par la PKI de l'autorité, un secret dérobé
+	# ne suffit plus à injecter.
+	#
+	# 1. Placez la chaîne de confiance dans ./certs/ca-operateurs.pem et montez-la
+	#    dans le service proxy (docker-compose.yml).
+	# 2. Décommentez le bloc ci-dessous.
+	# 3. Déclarez l'empreinte attendue de chaque assujetti :
+	#    PUT /api/v1/connectors/<operatorId> { "clientCertFingerprint": "<sha256>" }
+	#
+	# @ingestion path /api/v1/iso8583*
+	# handle @ingestion {
+	# 	reverse_proxy app:3000 {
+	# 		header_up X-Forwarded-Proto {scheme}
+	# 		# L'empreinte du certificat présenté est confrontée à celle déclarée.
+	# 		header_up X-Client-Cert-Fingerprint {tls_client_certificate_sha256_fingerprint}
+	# 	}
+	# }
+	#
+	# tls /certs/fullchain.pem /certs/privkey.pem {
+	# 	client_auth {
+	# 		mode require_and_verify
+	# 		trust_pool file /certs/ca-operateurs.pem
+	# 	}
+	# }
+
 	reverse_proxy app:3000 {
 		# Transmet le schéma d'origine pour que l'app pose des cookies Secure (SUMO_TRUST_PROXY=1).
 		header_up X-Forwarded-Proto {scheme}
+		# Sans mTLS actif, on NEUTRALISE l'en-tête : un client ne doit jamais pouvoir
+		# se forger lui-même une empreinte de certificat.
+		header_up -X-Client-Cert-Fingerprint
 	}
 }

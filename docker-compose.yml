@@ -13,17 +13,48 @@ services:
       SUMO_TRUST_PROXY: "1"
       # Origine(s) WebSocket autorisée(s) si vous servez un VRAI domaine (sinon localhost OK).
       # CORS_ORIGINS: "https://momo.arcep.ga"
-      # Identifiants connecteurs (HMAC). Sinon auto-générés et persistés dans le volume.
-      # SUMO_API_KEY: "..."
-      # SUMO_API_SECRET: "..."
+      # CHIFFREMENT AU REPOS (correctifs C2/F1) — À RENSEIGNER EN PRODUCTION.
+      # Sans phrase secrète, la clé de données et les clés privées de signature
+      # restent lisibles par quiconque accède au volume : ce n'est PAS un
+      # chiffrement au repos, et la posture de sécurité le dit.
+      # Préférez le montage d'un secret plutôt qu'une variable en clair :
+      #   SUMO_KEY_PASSPHRASE_FILE: /run/secrets/sumo_key_passphrase
+      # SUMO_KEY_PASSPHRASE: "..."
+      # Phrase de chiffrement des SAUVEGARDES — distincte de celle du service
+      # (séparation des rôles : l'exploitant et le détenteur des sauvegardes ne
+      # doivent pas être la même personne).
+      # SUMO_BACKUP_PASSPHRASE_FILE: /run/secrets/sumo_backup_passphrase
     volumes:
       - sumo-data:/app/data        # registre signé, clés, config, dossiers (persistant)
+      - app-tmp:/tmp               # seul espace scriptable hors volume de données
     expose:
       - "3000"                     # interne uniquement (pas de port publié)
     restart: unless-stopped
 
+    # --- Durcissement d'exécution (correctif P2 n°24) ------------------------
+    # Le système de fichiers applicatif est en LECTURE SEULE : une exécution de
+    # code arbitraire ne peut ni déposer de charge utile, ni modifier le code.
+    read_only: true
+    security_opt:
+      - no-new-privileges:true     # aucune élévation via setuid pendant la vie du conteneur
+    cap_drop:
+      - ALL                        # le service n'a besoin d'aucune capacité noyau
+    # Limites de ressources : un déni de service ne doit pas emporter l'hôte.
+    deploy:
+      resources:
+        limits: { cpus: '2.0', memory: 2G }
+        reservations: { cpus: '0.25', memory: 256M }
+    ulimits:
+      nofile: { soft: 4096, hard: 8192 }
+    logging:
+      driver: json-file
+      options: { max-size: '20m', max-file: '5' }
+    networks: [interne]
+
   proxy:
-    image: caddy:2-alpine
+    # Épinglé par version : `caddy:2-alpine` seul se déplacerait d'une
+    # reconstruction à l'autre. Figer par empreinte au moment du gel de version.
+    image: caddy:2.10-alpine
     depends_on:
       - app
     ports:
@@ -39,8 +70,33 @@ services:
       # PKI souveraine : montez vos certificats et adaptez le Caddyfile (voir commentaires).
       # - ./certs:/certs:ro
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Seule capacité réellement nécessaire : se lier aux ports 80 et 443.
+      - NET_BIND_SERVICE
+    deploy:
+      resources:
+        limits: { cpus: '1.0', memory: 512M }
+    logging:
+      driver: json-file
+      options: { max-size: '20m', max-file: '5' }
+    networks: [interne, public]
+
+# --- Segmentation réseau (correctif P2 n°24) --------------------------------
+# `interne` est un réseau SANS accès sortant : l'application ne peut contacter
+# aucun hôte extérieur, ce qui est exactement la posture attendue d'une console
+# de supervision souveraine — et ce qui rendrait inopérante une exfiltration
+# depuis l'application. Seul le proxy est également sur `public`.
+networks:
+  interne:
+    internal: true
+  public: {}
 
 volumes:
   sumo-data:
   caddy-data:
   caddy-config:
+  app-tmp:

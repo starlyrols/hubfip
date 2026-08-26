@@ -7,6 +7,10 @@ data/tls/
 data/*.jsonl
 data/*.json
 data/*.bak
+data/*.lock
+data/*.ckpt
+data-backup/
+data/keys/*.key
 data-demo/
 
 # Secrets & environnement

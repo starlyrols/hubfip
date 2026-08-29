@@ -21,13 +21,30 @@
 
   function goHome() { location.href = '/'; }
 
+  // Le second facteur n'apparaît QUE si le serveur l'exige : un champ toujours
+  // visible laisserait croire que tout le monde en porte un, et les profils qui
+  // n'en ont pas ont ici la même page qu'avant.
+  function askOtp() {
+    const field = $('otp-field');
+    if (!field) return;
+    field.classList.remove('hidden');
+    const input = $('otp');
+    if (input) { input.value = ''; input.focus(); }
+  }
+
   async function doLogin(ev) {
     ev.preventDefault();
     const username = $('username').value.trim();
     const password = $('password').value;
     if (!username || !password) return showError('Identifiant et mot de passe requis.');
-    const { ok, data } = await postJson('/api/v1/auth/login', { username, password });
+    const otpEl = $('otp');
+    const otp = otpEl && !$('otp-field').classList.contains('hidden') ? otpEl.value.trim() : undefined;
+
+    const { ok, data } = await postJson('/api/v1/auth/login', { username, password, otp });
     if (ok) return goHome();
+
+    if (data.code === 'TOTP_REQUIS') { askOtp(); return showError('Ce profil requiert un second facteur : saisissez votre code.'); }
+    if (data.code === 'TOTP_INVALIDE') { askOtp(); return showError('Code de second facteur invalide — vérifiez l\'heure de votre appareil.'); }
     showError(data.error || 'Identifiants invalides.');
   }
 
@@ -37,20 +54,19 @@
     showError(data.error || 'Accès démo indisponible.');
   }
 
+  // Habillage par rôle de l'organigramme ARCEP (+ admin système et opérateurs).
   const ROLE_META = {
-    REGULATEUR: { border: 'border-emerald-500/40 hover:bg-emerald-900/20', badge: 'text-emerald-300' },
-    OBSERVATOIRE: { border: 'border-emerald-500/30 hover:bg-emerald-900/15', badge: 'text-emerald-300' },
-    REVENUS: { border: 'border-amber-500/40 hover:bg-amber-900/20', badge: 'text-amber-300' },
-    QOS: { border: 'border-sky-500/40 hover:bg-sky-900/20', badge: 'text-sky-300' },
-    ANTIFRAUDE: { border: 'border-red-500/40 hover:bg-red-900/20', badge: 'text-red-300' },
-    JURIDIQUE: { border: 'border-indigo-500/40 hover:bg-indigo-900/20', badge: 'text-indigo-300' },
-    CONSO: { border: 'border-teal-500/40 hover:bg-teal-900/20', badge: 'text-teal-300' },
-    ADMIN: { border: 'border-purple-500/40 hover:bg-purple-900/20', badge: 'text-purple-300' },
-    AUDITEUR: { border: 'border-slate-500/40 hover:bg-slate-800/40', badge: 'text-slate-300' },
+    PRESIDENT: { border: 'border-emerald-500/40 hover:bg-emerald-900/20', badge: 'text-emerald-300' },
+    CONSEILLER: { border: 'border-emerald-500/30 hover:bg-emerald-900/15', badge: 'text-emerald-300' },
+    CABINET: { border: 'border-teal-500/40 hover:bg-teal-900/20', badge: 'text-teal-300' },
+    SECRETARIAT_CABINET: { border: 'border-teal-500/30 hover:bg-teal-900/15', badge: 'text-teal-300' },
+    SE: { border: 'border-sky-500/40 hover:bg-sky-900/20', badge: 'text-sky-300' },
+    SE_ADJOINT: { border: 'border-sky-500/30 hover:bg-sky-900/15', badge: 'text-sky-300' },
+    DIRECTEUR: { border: 'border-indigo-500/40 hover:bg-indigo-900/20', badge: 'text-indigo-300' },
+    AGENT: { border: 'border-slate-500/40 hover:bg-slate-800/40', badge: 'text-slate-300' },
+    ADMIN_SYSTEME: { border: 'border-purple-500/40 hover:bg-purple-900/20', badge: 'text-purple-300' },
     OPERATEUR: { border: 'border-gray-700 hover:bg-gray-800/60', badge: 'text-blue-300' },
   };
-
-  const CAT_ORDER = ['Régulateur (corps de métier)', 'Opérateurs Mobile Money'];
 
   function renderAccounts(payload) {
     const panel = $('demo-panel');
@@ -59,12 +75,11 @@
     panel.classList.remove('hidden');
     if (payload.password && $('demo-pass')) $('demo-pass').textContent = payload.password;
 
+    // L'ordre du serveur fait foi : gouvernance → exécutif → directions de
+    // l'organigramme → administration système → opérateurs Mobile Money.
     const groups = {};
     payload.accounts.forEach((a) => { (groups[a.category] = groups[a.category] || []).push(a); });
-    const cats = Object.keys(groups).sort((a, b) => {
-      const ia = CAT_ORDER.indexOf(a); const ib = CAT_ORDER.indexOf(b);
-      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
-    });
+    const cats = Object.keys(groups);
 
     const container = $('demo-accounts');
     container.innerHTML = '';
@@ -87,8 +102,18 @@
     container.querySelectorAll('.demo-btn').forEach((b) => b.addEventListener('click', () => demoLogin(b.dataset.username)));
   }
 
+  function renderThemeIcon() {
+    const i = document.querySelector('#btn-theme i');
+    if (i) i.className = 'fa-solid ' + (window.SumoTheme && SumoTheme.get() === 'light' ? 'fa-sun' : 'fa-moon');
+  }
+
   document.addEventListener('DOMContentLoaded', async () => {
     if ($('login-form')) $('login-form').addEventListener('submit', doLogin);
+    if ($('btn-theme') && window.SumoTheme) {
+      $('btn-theme').addEventListener('click', () => SumoTheme.toggle());
+      document.addEventListener('sumo:theme', renderThemeIcon);
+      renderThemeIcon();
+    }
 
     // Déjà authentifié ? On va directement à l'espace de travail.
     try {

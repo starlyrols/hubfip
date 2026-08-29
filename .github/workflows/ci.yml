@@ -21,6 +21,11 @@ jobs:
       - run: npm ci
       - name: Lint (ESLint)
         run: npm run lint
+      - name: Feuille d'utilitaires à jour (aucune dérive du source)
+        run: |
+          npm run build-css
+          git diff --exit-code -- public/css/tailwind.css \
+            || { echo "::error::public/css/tailwind.css est périmée — exécutez « npm run build-css » et versionnez le résultat."; exit 1; }
       - name: Tests unitaires & d'intégration
         run: npm test
       - name: Vérification d'intégrité du registre
@@ -32,6 +37,27 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build de l'image Docker (validation)
         run: docker build -t sumo-platform:ci .
+
+      # Correctif P2 n°24 — analyse de vulnérabilités de l'IMAGE, pas seulement
+      # des dépendances npm : la base Alpine et ses paquets système en portent
+      # aussi, et c'est ce qui est réellement déployé.
+      - name: Analyse de vulnérabilités de l'image (Trivy)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: sumo-platform:ci
+          format: table
+          severity: HIGH,CRITICAL
+          exit-code: '1'
+          ignore-unfixed: true
+
+      # Empreinte de la base réellement utilisée : c'est elle qu'on épingle dans
+      # le Dockerfile au moment de figer une version.
+      - name: Empreinte de l'image de base
+        if: always()
+        run: |
+          echo "Base résolue :"
+          docker image inspect sumo-platform:ci --format '{{.Id}}'
+          docker history --no-trunc --format '{{.CreatedBy}}' sumo-platform:ci | tail -1
 
   # Publie l'image sur GitHub Container Registry (ghcr.io) sur push vers main/master.
   publish:
@@ -75,5 +101,13 @@ jobs:
           node-version: 22.x
           cache: npm
       - run: npm ci
-      - name: Audit des dépendances (non bloquant)
+      # Correctif P2 n°24 — l'audit devient BLOQUANT. Un job qui se termine
+      # toujours en succès n'est pas un contrôle, c'est une décoration : celui-ci
+      # passait au vert avec une vulnérabilité connue au catalogue.
+      - name: Audit des dépendances (bloquant à partir de « high »)
+        run: npm audit --omit=dev --audit-level=high
+      # Les vulnérabilités faibles et modérées sont signalées sans bloquer : elles
+      # doivent être vues, pas arrêter la chaîne.
+      - name: Vulnérabilités faibles et modérées (informatif)
+        if: always()
         run: npm audit --omit=dev || true

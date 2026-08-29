@@ -13,12 +13,21 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
+    "demo": "bash scripts/demo-tunnel.sh",
     "gen-certs": "node scripts/gen-certs.js",
+    "import-org": "node scripts/import-arcep-org.js",
     "verify-ledger": "node scripts/verify-ledger.js",
     "lint": "eslint .",
-    "test": "node --test"
+    "test": "node --test",
+    "anchor": "node scripts/anchor.js",
+    "build-css": "tailwindcss -c tailwind.config.js -i build/tailwind.src.css -o public/css/tailwind.css --minify",
+    "backup": "node scripts/backup.js",
+    "loadtest": "node scripts/loadtest.js",
+    "build-frontieres": "node scripts/build-frontieres.js"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.3.0",
+    "@fortawesome/fontawesome-free": "^6.7.2",
     "chart.js": "^4.5.1",
     "cors": "^2.8.6",
     "express": "^4.19.2",
@@ -31,6 +40,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "eslint": "^9.39.4",
-    "globals": "^17.6.0"
+    "globals": "^17.6.0",
+    "tailwindcss": "^3.4.19"
   }
 }

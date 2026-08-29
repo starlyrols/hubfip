@@ -1,0 +1,196 @@
+# =============================================================================
+# Règles d'alerte Prometheus — SUMo (correctif P2 n°25).
+#
+# Principe de rédaction : on n'alerte que sur ce qui appelle une DÉCISION HUMAINE.
+# Une alerte qui ne dit pas quoi faire finit par être ignorée, et une console de
+# supervision dont les alertes sont ignorées ne supervise plus rien.
+#
+# Les alertes de gravité « critique » de ce fichier ne sont pas des incidents
+# techniques : ce sont des évènements RÉGLEMENTAIRES. Une chaîne rompue ou une
+# réécriture détectée remettent en cause la valeur probante d'un registre opposable
+# aux opérateurs. Elles doivent réveiller quelqu'un.
+#
+# Installation : charger dans Prometheus (`rule_files`), collecte sur /metrics
+# depuis le réseau interne.
+# =============================================================================
+
+groups:
+
+  # ---------------------------------------------------------------------------
+  - name: sumo-preuve
+    interval: 1m
+    rules:
+
+      - alert: SumoChaineRompue
+        expr: sumo_ledger_integrity_valid == 0
+        for: 0m                      # aucune temporisation : c'est immédiat
+        labels: { severity: critique, domaine: preuve }
+        annotations:
+          summary: "Chaîne « {{ $labels.chain }} » ROMPUE"
+          description: >-
+            Le contrôle d'intégrité a échoué. Les enregistrements concernés ne sont
+            plus probants et ne peuvent plus être opposés à un assujetti.
+          action: >-
+            Constater et archiver l'état actuel AVANT toute intervention. Ne pas
+            redémarrer le service : il refusera de repartir, et c'est voulu.
+            Rechercher un second écrivain sur le même répertoire de données.
+
+      - alert: SumoReecritureDetectee
+        expr: sumo_anchor_valid == 0
+        for: 0m
+        labels: { severity: critique, domaine: preuve }
+        annotations:
+          summary: "Le registre ne concorde plus avec le dernier reçu d'ancrage"
+          description: >-
+            L'historique a été tronqué ou réécrit depuis le dépôt du reçu. La chaîne
+            peut être cohérente avec elle-même : seul le reçu déposé chez un tiers
+            permet de le voir.
+          action: "Incident de sécurité majeur — geler l'instance et saisir la direction juridique."
+
+      - alert: SumoAucunControleIntegriteRecent
+        expr: time() - sumo_ledger_integrity_checked_at > 86400
+        for: 1h
+        labels: { severity: avertissement, domaine: preuve }
+        annotations:
+          summary: "Aucun contrôle d'intégrité depuis plus de 24 h sur « {{ $labels.chain }} »"
+          action: "Vérifier que le contrôle planifié s'exécute (SUMO_VERIFY_INTERVAL_MS)."
+
+  # ---------------------------------------------------------------------------
+  - name: sumo-conformite
+    interval: 5m
+    rules:
+
+      - alert: SumoEcheanceConservationDepassee
+        expr: sumo_retention_segments_due > 0
+        for: 48h                     # la purge planifiée tourne toutes les 24 h
+        labels: { severity: critique, domaine: conformite }
+        annotations:
+          summary: "{{ $value }} segment(s) au-delà de leur échéance de conservation"
+          description: >-
+            Des données nominatives dépassent la durée annoncée à la CNPDCP et n'ont
+            pas été purgées. L'engagement de l'AIPD n'est plus tenu.
+          action: "Vérifier la purge planifiée ; à défaut, déclencher POST /api/v1/retention/purge {\"confirm\":true}."
+
+      - alert: SumoSecretPartageEntreComptes
+        expr: sumo_accounts_distinct_secrets < sumo_accounts_total
+        for: 5m
+        labels: { severity: critique, domaine: conformite }
+        annotations:
+          summary: "Des comptes partagent un même secret — imputabilité individuelle perdue"
+          description: >-
+            Le journal d'audit ne peut plus désigner une personne. C'est le défaut
+            que le correctif B3 avait fermé : il est revenu.
+          action: "Vérifier data/credentials.json et régénérer les identifiants concernés."
+
+      - alert: SumoSecretPartageEntreConnecteurs
+        expr: sumo_connectors_distinct_keys < sumo_connectors_total
+        for: 5m
+        labels: { severity: critique, domaine: conformite }
+        annotations:
+          summary: "Des connecteurs partagent une même clé — attribution des déclarations perdue"
+          action: "Faire tourner les clés : POST /api/v1/connectors/<operatorId>/rotate."
+
+      - alert: SumoSecondFacteurIncomplet
+        expr: sumo_accounts_mfa_active < sumo_accounts_mfa_required
+        for: 7d
+        labels: { severity: avertissement, domaine: conformite }
+        annotations:
+          summary: "{{ $value }} profil(s) habilité(s) sans second facteur actif"
+          description: "Ces profils restent bloqués à l'accès tant qu'ils n'ont pas enrôlé leur facteur."
+          action: "Relancer les titulaires concernés."
+
+  # ---------------------------------------------------------------------------
+  - name: sumo-ingestion
+    interval: 1m
+    rules:
+
+      - alert: SumoCouvertureDeclarativeDegradee
+        expr: sumo_declaration_coverage_ratio < 0.95
+        for: 1h
+        labels: { severity: critique, domaine: ingestion }
+        annotations:
+          summary: "Couverture déclarative à {{ $value | humanizePercentage }}"
+          description: >-
+            Une part croissante de l'assiette n'a pas de frais déclarés, donc n'est
+            pas contrôlable. C'est un manquement au raccordement, pas un incident
+            technique.
+          action: "Identifier l'assujetti défaillant (sumo_revenue_underreported_total) et ouvrir un dossier."
+
+      - alert: SumoIngestionInterrompue
+        expr: rate(sumo_ingestion_accepted_total[15m]) == 0
+        for: 30m
+        labels: { severity: critique, domaine: ingestion }
+        annotations:
+          summary: "Aucune déclaration acceptée depuis 30 minutes"
+          description: "Le dispositif ne reçoit plus rien : panne d'un connecteur, ou interruption volontaire."
+          action: "Vérifier les refus par motif (sumo_ingestion_rejected_total) et contacter les assujettis."
+
+      - alert: SumoRefusMassifs
+        expr: >-
+          rate(sumo_ingestion_rejected_total[15m])
+          > 0.2 * rate(sumo_ingestion_accepted_total[15m])
+        for: 15m
+        labels: { severity: avertissement, domaine: ingestion }
+        annotations:
+          summary: "Plus d'un cinquième des déclarations refusées ({{ $labels.code }})"
+          action: "Un motif dominant signale généralement un défaut de conformité du connecteur, pas une attaque."
+
+      - alert: SumoRejeuxRepetes
+        expr: rate(sumo_ingestion_rejected_total{code="REJEU"}[15m]) > 0.1
+        for: 15m
+        labels: { severity: avertissement, domaine: securite }
+        annotations:
+          summary: "Rejeux répétés sur le canal d'ingestion"
+          action: "Bénin s'il s'agit d'un rattrapage ; à instruire si le motif persiste."
+
+  # ---------------------------------------------------------------------------
+  - name: sumo-service
+    interval: 30s
+    rules:
+
+      - alert: SumoBoucleBloquee
+        expr: sumo_eventloop_lag_seconds > 1
+        for: 2m
+        labels: { severity: critique, domaine: service }
+        annotations:
+          summary: "Boucle d'évènements bloquée ({{ $value }} s de retard)"
+          description: >-
+            Un traitement synchrone occupe le fil principal : l'API, le WebSocket et
+            l'ingestion sont gelés pour tous.
+          action: "Vérifier qu'aucun parcours de registre ne s'exécute hors du fil dédié (scanner)."
+
+      - alert: SumoPerteEntrepot
+        expr: increase(sumo_db_dropped_total[10m]) > 0
+        for: 0m
+        labels: { severity: avertissement, domaine: service }
+        annotations:
+          summary: "L'entrepôt abandonne des enregistrements (contre-pression)"
+          description: >-
+            Les TDR restent intègres au registre signé — l'entrepôt n'est qu'un index
+            de confort — mais les tableaux de bord divergeront de la source de vérité.
+          action: "Vérifier la santé de PostgreSQL et la profondeur de file (sumo_db_queue_depth)."
+
+      - alert: SumoEntrepotDegrade
+        expr: sumo_db_health >= 3
+        for: 5m
+        labels: { severity: avertissement, domaine: service }
+        annotations:
+          summary: "Entrepôt relationnel en échec répété"
+          action: "Consulter sumo_db_flush_failures_total et les journaux PostgreSQL."
+
+      - alert: SumoLectureRegistreSaturee
+        expr: sumo_scanner_queue_depth >= 8
+        for: 5m
+        labels: { severity: avertissement, domaine: service }
+        annotations:
+          summary: "File de parcours du registre saturée — rapports refusés en 503"
+          action: "Restreindre les périodes demandées, ou augmenter SUMO_SCAN_QUEUE_MAX."
+
+      - alert: SumoComptesVerrouilles
+        expr: sumo_accounts_locked > 3
+        for: 10m
+        labels: { severity: avertissement, domaine: securite }
+        annotations:
+          summary: "{{ $value }} comptes verrouillés simultanément"
+          description: "Plusieurs verrouillages concomitants évoquent une tentative de force brute."
+          action: "Consulter le journal d'audit (LOGIN_ECHEC) et les adresses d'origine."

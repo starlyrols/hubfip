@@ -4,33 +4,31 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SUMo — Supervision Mobile Money</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="/js/theme.js"></script><!-- pose data-theme AVANT le premier rendu (CSP : pas d'inline) -->
+    <!-- Ressources SERVIES PAR LA PLATEFORME (correctif P0 n°8) : plus aucun CDN
+         étranger, plus d'`unsafe-eval`, et la console fonctionne hors ligne. -->
+    <link rel="stylesheet" href="/css/tailwind.css">
+    <link rel="stylesheet" href="/vendor/fontawesome/css/all.min.css">
     <link rel="stylesheet" href="/vendor/leaflet/leaflet.css" />
+    <link rel="stylesheet" href="/css/theme.css">
     <script defer src="/vendor/leaflet/leaflet.js"></script>
     <script defer src="/vendor/chartjs/chart.umd.js"></script>
     <script defer src="/js/charts.js"></script>
+    <script defer src="/js/gabon-frontieres.js"></script><!-- tracé Natural Earth embarqué : aucune requête externe -->
+    <script defer src="/js/frontieres-afrique-centrale.js"></script><!-- voisinage CEEAC, même principe -->
     <script defer src="/js/map.js"></script>
     <script defer src="/js/app.js"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-        body { font-family: 'Inter', sans-serif; background: #050505; color: #e5e5e5; }
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #111; }
-        ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
-        .glass-panel { background: rgba(20,20,20,0.85); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); }
-        .cyber-grid { background-image: linear-gradient(rgba(16,185,129,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(16,185,129,0.03) 1px, transparent 1px); background-size: 20px 20px; }
-        .glow-text { text-shadow: 0 0 10px rgba(16,185,129,0.5); }
+        /* Styles structurels propres à cette page — les couleurs vivent dans /css/theme.css */
         .hash-truncate { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
         .tab-content.hidden { display: none; }
         .tab-content:focus { outline: none; }
         #map { height: 100%; width: 100%; border-radius: 0.75rem; }
-        .leaflet-container { background: #0a0a0a; }
-        .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #1a1a1a; color: #e5e5e5; border: 1px solid #333; }
         .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
         .skip-link { position: absolute; left: 8px; top: -40px; background: #10b981; color: #042; padding: 8px 12px; border-radius: 6px; z-index: 100; transition: top .15s; }
         .skip-link:focus { top: 8px; }
         .kpi { } .nav-section:empty { display:none; }
+        .mod-col { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 9px; letter-spacing: 0.04em; white-space: nowrap; display: inline-block; max-height: 110px; }
     </style>
 </head>
 <body class="h-screen flex flex-col overflow-hidden cyber-grid">
@@ -53,26 +51,41 @@
         </div>
     </div>
     <nav class="flex-1 p-3 space-y-1 overflow-y-auto text-sm" id="main-nav" role="tablist" aria-label="Navigation principale">
-        <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-2 px-2">Observatoire & marché</p>
-        <button role="tab" data-tab="observatoire" class="nav-btn"><i class="fa-solid fa-chart-pie w-5" aria-hidden="true"></i><span>Observatoire</span></button>
-        <button role="tab" data-tab="operators" class="nav-btn"><i class="fa-solid fa-tower-cell w-5" aria-hidden="true"></i><span>Opérateurs & moteurs</span></button>
-        <button role="tab" data-tab="geo" class="nav-btn"><i class="fa-solid fa-map-location-dot w-5" aria-hidden="true"></i><span>Géolocalisation</span></button>
-        <button role="tab" data-tab="registre" class="nav-btn"><i class="fa-solid fa-link w-5" aria-hidden="true"></i><span>Registre (TDR)</span></button>
+        <p id="nav-parent-monitoring" class="text-[11px] font-bold text-emerald-400 uppercase tracking-widest mb-1 mt-1 px-2"><i class="fa-solid fa-satellite-dish mr-1.5" aria-hidden="true"></i>Monitoring</p>
+        <div id="nav-group-monitoring" class="ml-2 pl-2 border-l border-gray-800 space-y-1">
+            <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-2 px-2">Observatoire & marché</p>
+            <button role="tab" data-tab="observatoire" class="nav-btn"><i class="fa-solid fa-chart-pie w-5" aria-hidden="true"></i><span>Observatoire</span></button>
+            <button role="tab" data-tab="operators" class="nav-btn"><i class="fa-solid fa-tower-cell w-5" aria-hidden="true"></i><span>Opérateurs & moteurs</span></button>
+            <button role="tab" data-tab="geo" class="nav-btn"><i class="fa-solid fa-map-location-dot w-5" aria-hidden="true"></i><span>Géolocalisation</span></button>
+            <button role="tab" data-tab="registre" class="nav-btn"><i class="fa-solid fa-link w-5" aria-hidden="true"></i><span>Registre (TDR)</span></button>
 
-        <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Économie & qualité</p>
-        <button role="tab" data-tab="revenus" class="nav-btn"><i class="fa-solid fa-coins w-5" aria-hidden="true"></i><span>Revenus & redevances</span></button>
-        <button role="tab" data-tab="qos" class="nav-btn"><i class="fa-solid fa-gauge-high w-5" aria-hidden="true"></i><span>Qualité de service</span></button>
-        <button role="tab" data-tab="reporting" class="nav-btn"><i class="fa-solid fa-file-invoice w-5" aria-hidden="true"></i><span>Reporting réglementaire</span></button>
+            <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Économie & qualité</p>
+            <button role="tab" data-tab="revenus" class="nav-btn"><i class="fa-solid fa-coins w-5" aria-hidden="true"></i><span>Revenus & redevances</span></button>
+            <button role="tab" data-tab="qos" class="nav-btn"><i class="fa-solid fa-gauge-high w-5" aria-hidden="true"></i><span>Qualité de service</span></button>
+            <button role="tab" data-tab="reporting" class="nav-btn"><i class="fa-solid fa-file-invoice w-5" aria-hidden="true"></i><span>Reporting réglementaire</span></button>
 
-        <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Antifraude & enquête</p>
-        <button role="tab" data-tab="antifraude" class="nav-btn"><i class="fa-solid fa-user-shield w-5" aria-hidden="true"></i><span>Antifraude / AML</span></button>
-        <button role="tab" data-tab="investigation" class="nav-btn"><i class="fa-solid fa-folder-open w-5" aria-hidden="true"></i><span>Investigation</span></button>
-        <button role="tab" data-tab="analytics" class="nav-btn"><i class="fa-solid fa-brain w-5" aria-hidden="true"></i><span>Analytics / Risque</span></button>
+            <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Antifraude & enquête</p>
+            <button role="tab" data-tab="antifraude" class="nav-btn"><i class="fa-solid fa-user-shield w-5" aria-hidden="true"></i><span>Antifraude / AML</span></button>
+            <button role="tab" data-tab="investigation" class="nav-btn"><i class="fa-solid fa-folder-open w-5" aria-hidden="true"></i><span>Investigation</span></button>
+            <button role="tab" data-tab="analytics" class="nav-btn"><i class="fa-solid fa-brain w-5" aria-hidden="true"></i><span>Analytics / Risque</span></button>
 
-        <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Système</p>
-        <button role="tab" data-tab="connecteurs" class="nav-btn"><i class="fa-solid fa-plug w-5" aria-hidden="true"></i><span>Connecteurs / Collecte</span></button>
-        <button role="tab" data-tab="securite" class="nav-btn"><i class="fa-solid fa-shield-halved w-5" aria-hidden="true"></i><span>Sécurité & audit</span></button>
-        <button role="tab" data-tab="admin" class="nav-btn"><i class="fa-solid fa-sliders w-5" aria-hidden="true"></i><span>Administration</span></button>
+            <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Gestion des dossiers (M15)</p>
+            <button role="tab" data-tab="workflow" class="nav-btn"><i class="fa-solid fa-inbox w-5" aria-hidden="true"></i><span>Dossiers & corbeilles</span></button>
+
+            <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Services financiers (M14)</p>
+            <button role="tab" data-tab="mesures" class="nav-btn"><i class="fa-solid fa-satellite-dish w-5" aria-hidden="true"></i><span>Mesure indépendante (N3)</span></button>
+            <button role="tab" data-tab="tiers" class="nav-btn"><i class="fa-solid fa-handshake w-5" aria-hidden="true"></i><span>Accès des tiers (PSP)</span></button>
+            <button role="tab" data-tab="reclamations" class="nav-btn"><i class="fa-solid fa-comment-dots w-5" aria-hidden="true"></i><span>Réclamations</span></button>
+            <button role="tab" data-tab="postal" class="nav-btn"><i class="fa-solid fa-envelopes-bulk w-5" aria-hidden="true"></i><span>Services postaux</span></button>
+
+            <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Système</p>
+            <button role="tab" data-tab="connecteurs" class="nav-btn"><i class="fa-solid fa-plug w-5" aria-hidden="true"></i><span>Connecteurs / Collecte</span></button>
+            <button role="tab" data-tab="securite" class="nav-btn"><i class="fa-solid fa-shield-halved w-5" aria-hidden="true"></i><span>Sécurité & audit</span></button>
+            <button role="tab" data-tab="admin" class="nav-btn"><i class="fa-solid fa-sliders w-5" aria-hidden="true"></i><span>Administration</span></button>
+        </div>
+
+        <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Administration système</p>
+        <button role="tab" data-tab="dispatch" class="nav-btn"><i class="fa-solid fa-sitemap w-5" aria-hidden="true"></i><span>Dispatch des modules</span></button>
 
         <p class="nav-head text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 mt-3 px-2">Aide</p>
         <button role="tab" data-tab="aide" class="nav-btn"><i class="fa-solid fa-circle-question w-5" aria-hidden="true"></i><span>Aide &amp; guide</span></button>
@@ -99,6 +112,7 @@
         </div>
         <div class="flex items-center gap-3">
             <p class="text-xs text-emerald-400 font-mono tracking-widest hidden sm:block" id="clock">00:00:00 WAT</p>
+            <button id="btn-theme" class="text-gray-400 hover:text-emerald-400 p-2" title="Basculer thème clair/sombre" aria-label="Basculer thème clair/sombre"><i class="fa-solid fa-moon" aria-hidden="true"></i></button>
             <div class="flex items-center gap-2 sm:pl-3 sm:border-l border-gray-700">
                 <div class="text-right hidden sm:block">
                     <p class="text-sm font-bold text-gray-200 leading-tight" id="user-name">—</p>
@@ -112,12 +126,21 @@
 
     <!-- OBSERVATOIRE (dashboard live) -->
     <div id="observatoire" class="p-4 md:p-6 space-y-5 tab-content" role="tabpanel" tabindex="-1">
-        <div class="grid grid-cols-2 lg:grid-cols-5 gap-4" aria-live="polite">
+        <div class="grid grid-cols-2 lg:grid-cols-6 gap-4" aria-live="polite">
             <div class="glass-panel p-4 rounded-xl border-t-2 border-t-emerald-500"><p class="text-[11px] text-gray-400 uppercase tracking-wider">Volume (fenêtre)</p><h3 class="text-xl font-bold mt-1 text-white" id="kpi-volume">0</h3></div>
             <div class="glass-panel p-4 rounded-xl border-t-2 border-t-blue-500"><p class="text-[11px] text-gray-400 uppercase tracking-wider">Transactions</p><h3 class="text-xl font-bold mt-1 text-white" id="kpi-count">0</h3></div>
             <div class="glass-panel p-4 rounded-xl border-t-2 border-t-sky-500"><p class="text-[11px] text-gray-400 uppercase tracking-wider">Taux de succès</p><h3 class="text-xl font-bold mt-1 text-white" id="kpi-success">—</h3></div>
             <div class="glass-panel p-4 rounded-xl border-t-2 border-t-amber-500"><p class="text-[11px] text-gray-400 uppercase tracking-wider">Frais perçus</p><h3 class="text-xl font-bold mt-1 text-white" id="kpi-fees">0</h3></div>
             <div class="glass-panel p-4 rounded-xl border-t-2 border-t-red-500"><p class="text-[11px] text-gray-400 uppercase tracking-wider">Alertes</p><h3 class="text-xl font-bold mt-1 text-white" id="kpi-alerts">0</h3></div>
+            <!-- Couverture déclarative : part de l'assiette dont les frais ont été
+                 DÉCLARÉS par l'assujetti, donc confrontables au barème. C'est
+                 l'indicateur qui dit si le dispositif contrôle réellement, ou s'il
+                 se contente d'observer ce qu'on veut bien lui transmettre. -->
+            <div class="glass-panel p-4 rounded-xl border-t-2 border-t-teal-500" title="Part des transactions réussies dont les frais ont été déclarés par l'assujetti, donc confrontables au barème officiel.">
+                <p class="text-[11px] text-gray-400 uppercase tracking-wider">Couverture déclarative</p>
+                <h3 class="text-xl font-bold mt-1 text-white" id="kpi-coverage">—</h3>
+                <p class="text-[10px] text-gray-500 mt-0.5" id="kpi-coverage-note"></p>
+            </div>
         </div>
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
             <div class="lg:col-span-2 glass-panel p-5 rounded-xl"><h3 class="text-sm font-semibold mb-3 text-gray-200">Débit (volume/min · temps réel)</h3><div class="h-64 w-full"><canvas id="fluxChart"></canvas></div></div>
@@ -141,7 +164,13 @@
     <div id="registre" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-registre"></div></div>
     <div id="reporting" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-reporting"></div></div>
     <div id="securite" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-securite"></div></div>
+    <div id="workflow" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-workflow"></div></div>
+    <div id="mesures" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-mesures"></div></div>
+    <div id="tiers" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-tiers"></div></div>
+    <div id="reclamations" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-reclamations"></div></div>
+    <div id="postal" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-postal"></div></div>
     <div id="admin" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-admin"></div></div>
+    <div id="dispatch" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-dispatch"></div></div>
     <div id="aide" class="p-4 md:p-6 tab-content hidden" role="tabpanel" tabindex="-1"><div id="view-aide"></div></div>
 
     <!-- GEO (carte fixe) -->
@@ -153,9 +182,9 @@
     </div>
 </main>
 </div>
-<script>
-  // Styles de boutons de navigation (appliqués au runtime pour la cohérence).
-  document.querySelectorAll('.nav-btn').forEach(b => { b.className = 'nav-btn w-full flex items-center gap-3 px-3 py-2.5 text-gray-300 rounded-lg text-left hover:bg-gray-800'; b.setAttribute('aria-selected','false'); });
-</script>
+<!-- Le style des boutons de navigation vit dans /js/nav.js : un script INLINE
+     était déjà bloqué par la CSP (script-src ne porte pas 'unsafe-inline'), donc
+     silencieusement inopérant. -->
+<script defer src="/js/nav.js"></script>
 </body>
 </html>

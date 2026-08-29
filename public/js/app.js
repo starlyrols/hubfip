@@ -13,7 +13,7 @@
   let activeTab = 'observatoire';
   let geoReady = false;
 
-  const REFRESH = new Set(['observatoire', 'antifraude', 'qos', 'revenus', 'analytics', 'securite', 'registre', 'geo']);
+  const REFRESH = new Set(['observatoire', 'antifraude', 'qos', 'revenus', 'analytics', 'securite', 'registre', 'geo', 'mesures', 'tiers', 'reclamations', 'postal', 'workflow']);
   const TITLES = {
     observatoire: ['Observatoire', 'Statistiques de marché en temps réel'],
     operators: ['Opérateurs & moteurs', 'Plateformes Mobile Money et réseaux d\'agents'],
@@ -28,6 +28,12 @@
     connecteurs: ['Connecteurs / Collecte', 'Ingestion multi-format et qualité des données'],
     securite: ['Sécurité & audit', 'Posture réelle, intégrité et journal d\'audit'],
     admin: ['Administration', 'Configuration des règles, tarifs et seuils'],
+    dispatch: ['Dispatch des modules', 'Affectation des modules aux directions et aux comptes'],
+    workflow: ['Gestion des dossiers', 'Standard BPM : corbeilles, statuts, SLA, avis et décisions'],
+    mesures: ['Mesure indépendante (N3)', 'Sondes transactionnelles — le mesuré prime sur le déclaré'],
+    tiers: ['Accès des tiers (PSP)', 'Raccordements, tarifs de gros et non-discrimination'],
+    reclamations: ['Réclamations consommateurs', 'Suivi agrégé et corrélation aux incidents techniques'],
+    postal: ['Services financiers postaux', 'Réseau, activité, qualité et inclusion (service universel)'],
     aide: ['Aide & guide', 'Comprendre la plateforme et lire chaque module'],
   };
 
@@ -43,7 +49,10 @@
     return nf.format(Math.round(v));
   };
   const pct = (v) => (v == null ? '—' : (100 * v).toFixed(1) + ' %');
-  const t = (epoch) => new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Libreville' }).format(new Date(epoch));
+  // Formateur unique : la construction d'un Intl.DateTimeFormat est coûteuse
+  // (chargement locale + fuseau) et t() est appelé par ligne de tableau.
+  const timeFmt = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Libreville' });
+  const t = (epoch) => timeFmt.format(new Date(epoch));
 
   async function getJSON(path) {
     const r = await fetch(path, { headers: { Accept: 'application/json' } });
@@ -99,6 +108,9 @@
   function onInit(d) {
     if ($('tls-status')) $('tls-status').textContent = d.tls ? 'TLS actif (WSS)' : 'HTTP (dev, sans TLS)';
     if ($('ledger-alg') && d.ledger) $('ledger-alg').textContent = d.ledger.algorithm;
+    // Villes du référentiel + fond de carte éventuel : sans tuiles configurées,
+    // la carte se dessine sur un fond local (correctif P0 n°8).
+    HubMap.configure({ cities: d.cities, basemap: d.basemap });
     HubCharts.initDashboard();
   }
   function onTx(tx, silent) {
@@ -120,6 +132,28 @@
   // ==========================================================================
   // Modules (renderers)
   // ==========================================================================
+  // Couverture déclarative. Une assiette vide n'affiche PAS « 100 % » : sans
+  // transaction observée, il n'y a rien à certifier — et un indicateur au vert
+  // sur zéro donnée est exactement le genre de chiffre rassurant qui trompe.
+  function majCouverture(t) {
+    const el = $('kpi-coverage'); const note = $('kpi-coverage-note');
+    if (!el) return;
+    const c = t.declarationCoverage;
+    if (c == null) {
+      el.textContent = '—';
+      el.className = 'text-xl font-bold mt-1 text-gray-500';
+      if (note) note.textContent = 'aucune transaction dénouée sur la fenêtre';
+      return;
+    }
+    el.textContent = pct(c);
+    el.className = 'text-xl font-bold mt-1 ' + (c >= 0.99 ? 'text-emerald-300' : (c >= 0.95 ? 'text-amber-300' : 'text-red-300'));
+    if (note) {
+      note.textContent = t.feeUndeclared
+        ? `${nf.format(t.feeUndeclared)} sans frais déclarés`
+        : `${nf.format(t.feeDeclared)} transactions confrontées au barème`;
+    }
+  }
+
   async function loadObservatoire() {
     const s = await getJSON('/api/v1/stats?minutes=20');
     $('kpi-volume').textContent = xaf(s.totals.sumXaf) + ' XAF';
@@ -127,6 +161,7 @@
     $('kpi-success').textContent = pct(s.totals.successRate);
     $('kpi-fees').textContent = xaf(s.totals.feeXaf) + ' XAF';
     $('kpi-alerts').textContent = nf.format(s.totals.alerts || 0);
+    majCouverture(s.totals);
     HubCharts.pushFlux(s.series);
     HubCharts.setShare(s.byOperator);
     HubCharts.setType(s.byType);
@@ -176,7 +211,15 @@
       { label: 'Attendu', render: (r) => nf.format(r.feeExpected) },
       { label: 'Manque', render: (r) => `<span class="text-red-400 font-bold">${nf.format(r.gapXaf)}</span>` },
     ], disc.items);
-    $('view-revenus').innerHTML = cards
+    const couverture = d.declarationCoverage != null
+      ? `<div class="bg-gray-800/40 p-3 rounded border ${d.declarationCoverage >= 0.95 ? 'border-gray-700' : 'border-amber-500/40'} mb-5 text-sm">
+           <span class="font-semibold text-gray-200">Couverture déclarative : </span>
+           <span class="${d.declarationCoverage >= 0.95 ? 'text-emerald-300' : 'text-amber-300'} font-bold">${pct(d.declarationCoverage)}</span>
+           <span class="text-xs text-gray-400"> — part de l'assiette dont les frais ont été DÉCLARÉS, donc confrontables au barème.
+           ${d.totals.feeUndeclaredCount ? `<span class="text-amber-300">${nf.format(d.totals.feeUndeclaredCount)} transaction(s) sans frais déclarés — hors assiette, à réclamer aux assujettis.</span>` : 'Aucune transaction sans frais déclarés.'}</span>
+         </div>`
+      : '';
+    $('view-revenus').innerHTML = couverture + cards
       + panel('Assurance des revenus & redevances par opérateur', opTable, 'mb-5')
       + panel('Écarts récents (sous-déclaration de frais)', discTable);
   }
@@ -356,10 +399,31 @@
       ${panel('Injection authentifiée', '<p class="text-xs text-gray-400 leading-relaxed">Chaque opérateur pousse ses TDR via <span class="font-mono text-emerald-400">POST /api/v1/iso8583</span>, signés <span class="font-mono">HMAC-SHA256</span>. Les formats hétérogènes (dialectes Comviva/Ericsson/maison) sont harmonisés vers le modèle TDR commun, contrôlés (complétude), puis scellés au registre signé. Aucune connexion intrusive aux cœurs opérateurs.</p>')}</div>`;
   }
 
+  // Portée du prochain contrôle d'intégrité demandé depuis l'onglet Registre.
+  let verifyFull = false;
+
   async function loadRegistre() {
     const d = await getJSON('/api/v1/ledger?limit=80');
+    // Correctif C3 : ne jamais afficher « chaîne valide » sans dire SUR QUOI porte
+    // le contrôle. Une vérification bornée s'ancre sur le fichier lui-même et ne
+    // certifie pas l'historique antérieur — c'est ce qui avait laissé afficher
+    // « VALIDE » alors que la rupture était en amont de la fenêtre.
     let integrity = '<span class="text-gray-400">…</span>';
-    try { const v = await getJSON('/api/v1/ledger/verify'); integrity = v.valid ? `<span class="text-emerald-300 font-bold">Chaîne VALIDE — ${v.total} enregistrements</span>` : `<span class="text-red-300 font-bold">RUPTURE au seq ${v.brokenAt}</span>`; } catch { /* */ }
+    let integrityNote = '';
+    try {
+      const v = await getJSON('/api/v1/ledger/verify' + (verifyFull ? '?full=1' : ''));
+      if (!v.valid) {
+        integrity = `<span class="text-red-300 font-bold">RUPTURE (${esc(v.reason || 'inconnue')}) au seq ${v.brokenAt}</span>`;
+      } else if (v.anchored) {
+        integrity = `<span class="text-emerald-300 font-bold">Chaîne VALIDE depuis la genèse — ${nf.format(v.checked)} enregistrements</span>`;
+        integrityNote = `Chaînage et continuité de séquence contrôlés sur 100 % des enregistrements ; ${nf.format(v.signaturesChecked || 0)} signatures vérifiées.`;
+      } else {
+        integrity = `<span class="text-amber-300 font-bold">Contrôle PARTIEL — ${nf.format(v.checked)} derniers enregistrements conformes</span>`;
+        integrityNote = 'Portée bornée, ancrée sur le fichier lui-même : ne certifie PAS l\'historique antérieur. Utilisez « Vérifier depuis la genèse ».';
+      }
+      const sc = v.startupCheck;
+      if (sc) integrityNote += ` — Dernier contrôle intégral au démarrage : ${sc.valid ? 'conforme' : 'ROMPU'} (${new Date(sc.at).toLocaleString('fr-FR')}).`;
+    } catch { /* */ }
     const tab = table([
       { label: 'Seq', key: 'seq', cls: 'font-mono text-gray-500' },
       { label: 'Heure', render: (r) => t(r.payload.epoch) },
@@ -371,11 +435,16 @@
       { label: 'Statut', render: (r) => statusBadge(r.payload.status) },
     ], d.records);
     $('view-registre').innerHTML = panel('Intégrité du registre',
-      `<div class="flex items-center justify-between"><p class="text-sm">Chaînage SHA-256 + signature ECDSA P-256 · persistant. Intégrité : ${integrity}</p>
-       <button id="verify-btn" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-1.5 text-xs">Re-vérifier</button></div>
+      `<div class="flex items-center justify-between gap-3"><p class="text-sm">Chaînage SHA-256 + signature ECDSA P-256 · persistant. Intégrité : ${integrity}</p>
+       <div class="flex gap-2 shrink-0">
+         <button id="verify-btn" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-1.5 text-xs">Re-vérifier</button>
+         <button id="verify-full-btn" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-1.5 text-xs">Vérifier depuis la genèse</button>
+       </div></div>
+       ${integrityNote ? `<p class="text-[11px] text-amber-300/80 mt-2">${esc(integrityNote)}</p>` : ''}
        <p class="text-[11px] text-gray-500 mt-2">Total : ${nf.format(d.stats.total)} TDR scellés. Numéros masqués (minimisation des données).</p>`, 'mb-5')
       + panel('Derniers TDR scellés', tab);
-    if ($('verify-btn')) $('verify-btn').addEventListener('click', loadRegistre);
+    if ($('verify-btn')) $('verify-btn').addEventListener('click', () => { verifyFull = false; loadRegistre(); });
+    if ($('verify-full-btn')) $('verify-full-btn').addEventListener('click', () => { verifyFull = true; loadRegistre(); });
   }
 
   async function loadReporting() {
@@ -415,6 +484,70 @@
 
   function download(url) { const a = document.createElement('a'); a.href = url; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
 
+  // Cartes de posture. Chacune affiche l'état RÉEL renvoyé par l'API — y compris
+  // quand il est dégradé : un écran qui annonce une garantie non tenue est
+  // exactement le défaut que l'audit reprochait au dossier.
+  const carte = (icone, couleur, titre, corps) => `
+    <div class="bg-gray-800/40 p-3 rounded border border-gray-700">
+      <h4 class="font-semibold text-gray-200"><i class="fa-solid ${icone} mr-2 ${couleur}"></i>${titre}</h4>
+      <p class="text-xs text-gray-400 mt-1">${corps}</p>
+    </div>`;
+
+  function carteChiffrement(c) {
+    if (!c) return '';
+    const ok = c.passphrase;
+    return carte('fa-shield-halved', ok ? 'text-emerald-400' : 'text-red-400', 'Chiffrement au repos',
+      ok
+        ? `Paliers P2 et P3 chiffrés par clé de segment · clés privées en PKCS#8 chiffré (phrase : ${esc(c.source || 'configurée')}).<br><span class="text-gray-500">${esc(c.limite)}</span>`
+        : `<span class="text-red-300 font-semibold">MODE DÉGRADÉ</span> — aucune phrase secrète : clé de données et clés privées lisibles sur le volume. Ce n'est pas un chiffrement au repos.`);
+  }
+
+  function carteAncrage(a) {
+    if (!a) return '';
+    if (!a.anchored) {
+      return carte('fa-stamp', 'text-amber-400', 'Ancrage externe',
+        'Aucun reçu émis. Un registre signé n\'est pas opposable à son propre exploitant tant qu\'une racine n\'a pas été déposée chez un tiers.');
+    }
+    return a.valid
+      ? carte('fa-stamp', 'text-emerald-400', 'Ancrage externe',
+        `Concordance vérifiée avec le reçu du rang ${nf.format(a.receipt.seq)}${a.receipt.emittedAt ? ' (' + esc(new Date(a.receipt.emittedAt).toLocaleString('fr-FR')) + ')' : ''}.<br><span class="text-gray-500">Le dépôt du reçu chez un tiers reste un acte organisationnel.</span>`)
+      : carte('fa-stamp', 'text-red-400', 'Ancrage externe',
+        `<span class="text-red-300 font-semibold">ÉCART DÉTECTÉ</span> — ${esc(a.reason)}`);
+  }
+
+  function carteConservation(r) {
+    if (!r || !r.politique) return '';
+    const dus = (r.aPurger || []).length;
+    const paliers = Object.entries(r.politique)
+      .map(([t, p]) => `${t} : ${p.moisConservation} mois · ${p.purges} purgé(s)`).join(' — ');
+    return carte('fa-folder-open', dus ? 'text-amber-400' : 'text-emerald-400', 'Conservation & effacement',
+      `${esc(paliers)}.<br>${dus ? `<span class="text-amber-300">${dus} segment(s) au-delà de l'échéance</span>` : 'Aucune échéance dépassée'} · effacement cryptographique par clé de segment.`);
+  }
+
+  function carteCanal(c) {
+    if (!c) return '';
+    const propre = c.clesDistinctes === c.connecteurs;
+    return carte('fa-plug', propre ? 'text-emerald-400' : 'text-red-400', 'Canal d\'ingestion',
+      `${c.connecteurs} assujettis · ${c.clesDistinctes} clé(s) distincte(s)${propre ? '' : ' <span class="text-red-300 font-semibold">— SECRET PARTAGÉ</span>'} · anti-rejeu ${Math.round(c.antiRejeu.fenetreMs / 1000)} s · ${c.avecMtls}/${c.connecteurs} sous mTLS.`);
+  }
+
+  function carteIdentites(i) {
+    if (!i) return '';
+    const propre = i.secretsDistincts === i.comptes;
+    const alertes = [];
+    if (i.changementRequis) alertes.push(`${i.changementRequis} secret(s) initial(aux) non changé(s)`);
+    if (i.expires) alertes.push(`${i.expires} expiré(s)`);
+    if (i.verrouilles) alertes.push(`${i.verrouilles} verrouillé(s)`);
+    return carte('fa-user-shield', propre ? 'text-emerald-400' : 'text-red-400', 'Identités',
+      `${i.comptes} comptes · ${i.secretsDistincts} secret(s) distinct(s)${propre ? '' : ' <span class="text-red-300 font-semibold">— IMPUTABILITÉ PERDUE</span>'} · second facteur ${i.totpActifs}/${i.totpRequis}.${alertes.length ? '<br><span class="text-amber-300">' + esc(alertes.join(' · ')) + '</span>' : ''}${i.modeDemonstration ? '<br><span class="text-gray-500">Mode démonstration : secret commun, contraintes levées.</span>' : ''}`);
+  }
+
+  function carteLecture(l) {
+    if (!l) return '';
+    return carte('fa-gauge-high', l.queued >= l.queueMax ? 'text-amber-400' : 'text-emerald-400', 'Lecture du registre',
+      `Parcours hors du fil principal · ${l.queued}/${l.queueMax} en file · délai max ${Math.round(l.timeoutMs / 1000)} s.`);
+  }
+
   async function loadSecurite() {
     const s = await getJSON('/api/v1/security');
     const au = await getJSON('/api/v1/audit?limit=80');
@@ -425,6 +558,12 @@
       <div class="bg-gray-800/40 p-3 rounded border border-gray-700"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-clipboard-check mr-2 ${aud.valid ? 'text-emerald-400' : 'text-red-400'}"></i>Journal d'audit</h4><p class="text-xs text-gray-400 mt-1">${aud.valid ? 'Chaîne valide' : 'RUPTURE seq ' + aud.brokenAt} · ${nf.format(s.audit.total)} évènements (inviolable)</p></div>
       <div class="bg-gray-800/40 p-3 rounded border border-gray-700"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-user-lock mr-2 text-emerald-400"></i>Minimisation des données</h4><p class="text-xs text-gray-400 mt-1">MSISDN masqués par défaut. Révélation : ${esc(s.dataMinimization.revealRoles.join(', '))} — journalisée.</p></div>
       <div class="bg-gray-800/40 p-3 rounded border border-gray-700"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-database mr-2 ${s.persistence && s.persistence.enabled ? 'text-emerald-400' : 'text-gray-400'}"></i>Entrepôt PostgreSQL</h4><p class="text-xs text-gray-400 mt-1">${s.persistence && s.persistence.enabled ? ('Actif — ' + nf.format(s.persistence.rows || 0) + ' lignes persistées') : 'Désactivé (stockage en mémoire) — activer via <span class="font-mono">DATABASE_URL</span> / <span class="font-mono">make up-db</span>'}</p></div>
+      ${carteChiffrement(s.chiffrementAuRepos)}
+      ${carteAncrage(s.ancrageExterne)}
+      ${carteConservation(s.conservation)}
+      ${carteCanal(s.canalIngestion)}
+      ${carteIdentites(s.identites)}
+      ${carteLecture(s.lectureRegistre)}
       <div class="bg-gray-800/40 p-3 rounded border border-gray-700 md:col-span-2"><h4 class="font-semibold text-gray-200"><i class="fa-solid fa-triangle-exclamation mr-2 text-amber-400"></i>Objectifs non encore atteints (honnêteté)</h4><ul class="text-xs text-gray-400 mt-1 list-disc list-inside">${s.notImplemented.map((x) => '<li>' + esc(x) + '</li>').join('')}</ul></div>
     </div>`;
     const auditTable = table([
@@ -483,6 +622,114 @@
     $('cfg-reset').addEventListener('click', async () => { try { await sendJSON('/api/v1/config/reset', 'POST', {}); loadAdmin(); } catch (e) { alert(e.message); } });
   }
 
+  // ---------- Dispatch des modules (réservé ADMIN_SYSTEME) ----------
+  let dispatchUserSel = null; // compte sélectionné dans la section individuelle
+  let dispatchMsg = '';       // feedback transitoire ré-affiché après re-rendu
+
+  async function putDispatch(path, modules) {
+    try {
+      await sendJSON(path, 'PUT', { modules });
+      dispatchMsg = '<span class="text-emerald-400">Affectation enregistrée ✓</span>';
+    } catch (e) {
+      dispatchMsg = `<span class="text-red-400">Erreur : ${esc(e.message)}</span>`;
+    }
+    await loadDispatch(); // re-rendu depuis l'état serveur (source de vérité)
+  }
+
+  // Lit l'état des cases d'une ligne : parent coché → ['monitoring'] ; sinon la
+  // liste des sous-modules cochés.
+  function rowModules(scope, key, parentId) {
+    const boxes = [...document.querySelectorAll(`input.${scope}[data-key="${key}"]`)];
+    const parent = boxes.find((b) => b.dataset.mod === parentId);
+    if (parent && parent.checked) return [parentId];
+    return boxes.filter((b) => b.dataset.mod !== parentId && b.checked).map((b) => b.dataset.mod);
+  }
+
+  async function loadDispatch() {
+    const d = await getJSON('/api/v1/dispatch/state');
+    const box = $('view-dispatch');
+    if (!d.directions.length) {
+      box.innerHTML = panel('Nomenclature absente', '<p class="text-sm text-amber-300">Aucune direction chargée — exécuter <span class="font-mono">npm run import-org</span> puis redémarrer le serveur.</p>');
+      return;
+    }
+    const parent = d.modules[0]; // « monitoring » (seul module top-level à ce stade)
+    const leaves = parent.children;
+    const expand = (mods) => mods.includes(parent.id) ? leaves.map((m) => m.id) : mods;
+
+    const nothing = d.directions.every((dir) => !dir.modules.length) && d.users.every((u) => !u.individualModules.length);
+    const banner = nothing ? `<div class="bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm rounded-lg px-4 py-3 mb-5"><i class="fa-solid fa-triangle-exclamation mr-2"></i>Aucun module dispatché : les utilisateurs ne voient que l'Aide. Cochez des modules ci-dessous.</div>` : '';
+
+    // --- 1. Matrice directions × modules (héritage par tous les membres) ---
+    const thCls = 'p-1 align-bottom text-center sticky top-0 bg-gray-900 z-10'; // opaque : les lignes ne transparaissent pas sous l'en-tête
+    const th = leaves.map((m) => `<th class="${thCls}"><span class="mod-col" title="${esc(m.label)} — ${esc(m.section)}">${esc(m.id)}</span></th>`).join('');
+    const rows = d.directions.map((dir) => {
+      const whole = dir.modules.includes(parent.id);
+      const cells = leaves.map((m) => {
+        const checked = whole || dir.modules.includes(m.id);
+        return `<td class="p-1 text-center"><input type="checkbox" class="disp-dir accent-emerald-500" data-key="${esc(dir.code)}" data-mod="${esc(m.id)}" ${checked ? 'checked' : ''} ${whole ? 'disabled' : ''} aria-label="${esc(m.label)} pour ${esc(dir.code)}"></td>`;
+      }).join('');
+      return `<tr class="border-b border-gray-800/40 hover:bg-gray-800/20">
+        <td class="p-2"><span class="font-semibold text-gray-200">${esc(dir.code)}</span><span class="block text-[10px] text-gray-500 max-w-[220px] truncate" title="${esc(dir.nom)}">${esc(dir.nom)}</span><span class="block text-[10px] text-gray-600">${dir.membres.length} compte(s)</span></td>
+        <td class="p-1 text-center bg-emerald-900/10 border-x border-gray-800/60"><input type="checkbox" class="disp-dir accent-emerald-400" data-key="${esc(dir.code)}" data-mod="${esc(parent.id)}" ${whole ? 'checked' : ''} aria-label="Monitoring complet pour ${esc(dir.code)}"></td>
+        ${cells}</tr>`;
+    }).join('');
+    const matrix = `<div class="overflow-auto max-h-[55vh]"><table class="w-full text-xs">
+      <thead><tr><th class="p-2 text-left text-[10px] uppercase tracking-wider text-gray-500 align-bottom sticky top-0 bg-gray-900 z-10">Direction</th><th class="${thCls}"><span class="mod-col text-emerald-400 font-bold" title="${esc(parent.description)}">Monitoring (tout)</span></th>${th}</tr></thead>
+      <tbody>${rows}</tbody></table></div>
+      <p class="text-[11px] text-gray-500 mt-2">Cocher « Monitoring (tout) » affecte les ${leaves.length} sous-modules ; chaque clic enregistre immédiatement la ligne (effet en temps réel, sans reconnexion des agents).</p>`;
+
+    // --- 2. Affectations individuelles (modules hors périmètre de la direction) ---
+    if (!dispatchUserSel || !d.users.some((u) => u.username === dispatchUserSel)) dispatchUserSel = d.users[0] && d.users[0].username;
+    const groups = {};
+    d.users.forEach((u) => { const g = u.direction || 'Hors organigramme (opérateurs)'; (groups[g] = groups[g] || []).push(u); });
+    const opts = Object.entries(groups).map(([g, list]) => `<optgroup label="${esc(g)}">${list.map((u) => `<option value="${esc(u.username)}" ${u.username === dispatchUserSel ? 'selected' : ''}>${esc(u.displayName)} (${esc(u.username)})</option>`).join('')}</optgroup>`).join('');
+    const sel = d.users.find((u) => u.username === dispatchUserSel);
+    let indiv = '<p class="text-xs text-gray-500 italic">Aucun compte.</p>';
+    if (sel) {
+      const dirEntry = d.directions.find((x) => x.code === sel.direction);
+      const inherited = dirEntry ? expand(dirEntry.modules) : [];
+      const wholeU = sel.individualModules.includes(parent.id);
+      const chips = (list, cls) => list.length ? list.map((m) => `<span class="px-1.5 py-0.5 rounded text-[10px] border ${cls} font-mono">${esc(m)}</span>`).join(' ') : '<span class="text-gray-500 italic text-[11px]">aucun</span>';
+      const boxes = [`<label class="flex items-center gap-1.5 text-xs text-emerald-300 font-semibold mr-3"><input type="checkbox" class="disp-user accent-emerald-400" data-key="${esc(sel.username)}" data-mod="${esc(parent.id)}" ${wholeU ? 'checked' : ''}>Monitoring (tout)</label>`]
+        .concat(leaves.map((m) => {
+          const checked = wholeU || sel.individualModules.includes(m.id);
+          return `<label class="flex items-center gap-1.5 text-xs text-gray-300"><input type="checkbox" class="disp-user accent-emerald-500" data-key="${esc(sel.username)}" data-mod="${esc(m.id)}" ${checked ? 'checked' : ''} ${wholeU ? 'disabled' : ''}>${esc(m.id)}</label>`;
+        })).join('');
+      indiv = `
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mb-3">
+          <div><p class="text-gray-400 mb-1">Hérités de la direction ${sel.direction ? `<span class="font-mono text-gray-300">${esc(sel.direction)}</span>` : '(aucune)'} :</p>${chips(inherited, 'border-gray-600 text-gray-300 bg-gray-800/50')}</div>
+          <div><p class="text-gray-400 mb-1">Effectifs (hérités + individuels) :</p>${chips(sel.effectiveModules, 'border-emerald-500/40 text-emerald-300 bg-emerald-900/20')}</div>
+        </div>
+        <p class="text-gray-400 text-xs mb-1.5">Affectations individuelles (s'ajoutent à l'héritage) :</p>
+        <div class="flex flex-wrap gap-x-4 gap-y-2">${boxes}</div>`;
+    }
+    const indivPanel = `
+      <div class="flex items-center gap-3 mb-4 text-sm">
+        <label for="disp-user-sel" class="text-gray-300 text-xs">Compte :</label>
+        <select id="disp-user-sel" class="flex-1 max-w-md bg-gray-800 border border-gray-700 rounded p-2 text-white text-xs">${opts}</select>
+      </div>${indiv}`;
+
+    // --- 3. Entrées orphelines (nomenclature/comptes disparus) ---
+    const orphanList = [...d.orphans.directions.map((c) => `direction « ${esc(c)} »`), ...d.orphans.users.map((u) => `compte « ${esc(u)} »`)];
+    const orphans = orphanList.length ? panel('Affectations orphelines', `<p class="text-xs text-amber-300"><i class="fa-solid fa-triangle-exclamation mr-1"></i>Entrées persistées sans correspondance dans la nomenclature (inertes) : ${orphanList.join(', ')}.</p>`, 'mt-5 border border-amber-500/20') : '';
+
+    box.innerHTML = banner
+      + `<div class="flex items-center justify-between mb-3"><p class="text-xs text-gray-400">Module parent : <span class="text-emerald-300 font-semibold">${esc(parent.label)}</span> — ${esc(parent.description)}</p><span id="disp-msg" class="text-xs">${dispatchMsg}</span></div>`
+      + panel(`Modules par direction (${d.directions.length} entités de l'organigramme ARCEP)`, matrix, 'mb-5')
+      + panel('Affectations individuelles par compte', indivPanel)
+      + orphans;
+    dispatchMsg = '';
+
+    box.querySelectorAll('input.disp-dir').forEach((cb) => cb.addEventListener('change', () => {
+      putDispatch(`/api/v1/dispatch/directions/${encodeURIComponent(cb.dataset.key)}`, rowModules('disp-dir', cb.dataset.key, parent.id));
+    }));
+    box.querySelectorAll('input.disp-user').forEach((cb) => cb.addEventListener('change', () => {
+      putDispatch(`/api/v1/dispatch/users/${encodeURIComponent(cb.dataset.key)}`, rowModules('disp-user', cb.dataset.key, parent.id));
+    }));
+    const selEl = $('disp-user-sel');
+    if (selEl) selEl.addEventListener('change', () => { dispatchUserSel = selEl.value; loadDispatch(); });
+  }
+
   async function loadGeo() {
     if (!geoReady) { HubMap.init(); geoReady = true; }
     HubMap.invalidate();
@@ -513,7 +760,7 @@
         ${mod('fa-map-location-dot', '9. Géolocalisation', 'Corrélation cellule ↔ TDR, déplacement impossible (SIM-box).')}
         ${mod('fa-brain', '10. Analytics / Risque', 'Détection statistique (z-score) et scoring de risque par abonné.')}
         ${mod('fa-file-invoice', '11. Reporting', 'Rapports (observatoire/redevances/QoS/AML) sur période, exports signés.')}
-        ${mod('fa-shield-halved', '12. Sécurité & audit', 'RBAC par corps de métier, journal d\'audit inviolable, minimisation.')}
+        ${mod('fa-shield-halved', '12. Sécurité & audit', 'Modules dispatchés par direction/compte, journal d\'audit inviolable, minimisation.')}
         ${mod('fa-sliders', '13. Administration', 'Grilles tarifaires, seuils de règles, QoS, redevance — à chaud.')}
       </div>`, 'mb-5')}
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -521,7 +768,7 @@
         ${panel('Lire l\'interface', `<ul class="text-xs text-gray-400 space-y-1 list-disc list-inside">
           <li>Bandeau orange = <b>démonstration, données simulées</b>.</li>
           <li>Pastille verte en bas du menu = flux temps réel connecté.</li>
-          <li>Onglets visibles = ceux autorisés par votre profil.</li>
+          <li>Onglets visibles = modules dispatchés à votre direction ou à votre compte par l'admin système.</li>
           <li>Bouton <i class="fa-solid fa-diagram-project"></i> sur une alerte = tracer le sujet (Investigation).</li>
           <li>Exports : fichiers signés (SHA-256 + ECDSA).</li>
         </ul>`)}
@@ -529,7 +776,303 @@
       ${panel('Votre profil', `<p class="text-sm text-gray-300">Connecté en tant que <b>${esc(user ? user.displayName : '')}</b>. Modules accessibles : <span class="font-mono text-emerald-300 text-xs">${esc(myModules)}</span>${perms.canReveal ? ' · <span class="text-amber-300">révélation MSISDN autorisée (tracée)</span>' : ''}.</p>`, 'mt-5')}`;
   }
 
-  const LOADERS = { observatoire: loadObservatoire, operators: loadOperators, revenus: loadRevenus, qos: loadQos, antifraude: loadAntifraude, investigation: loadInvestigation, analytics: loadAnalytics, connecteurs: loadConnecteurs, registre: loadRegistre, reporting: loadReporting, securite: loadSecurite, admin: loadAdmin, geo: loadGeo, aide: loadAide };
+  // NB : « dispatch » est volontairement HORS de REFRESH — le poll de 4 s
+  // écraserait l'état des cases à cocher en cours de manipulation.
+  // ==========================================================================
+  // Module M15 — Gestion des dossiers (moteur de workflow BPM)
+  // ==========================================================================
+  const STATUT_STYLE = {
+    ENREGISTRE: 'bg-sky-500/20 text-sky-300 border-sky-500/30', RECEVABLE: 'bg-sky-500/20 text-sky-300 border-sky-500/30',
+    INCOMPLET: 'bg-amber-500/20 text-amber-300 border-amber-500/30', SUSPENDU_COMPLEMENT: 'bg-amber-500/20 text-amber-300 border-amber-500/30',
+    EN_INSTRUCTION: 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30', EN_AVIS: 'bg-purple-500/20 text-purple-300 border-purple-500/30',
+    EN_VALIDATION: 'bg-purple-500/20 text-purple-300 border-purple-500/30', EN_ARBITRAGE_SE: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+    EN_DELIBERATION_CR: 'bg-orange-500/20 text-orange-300 border-orange-500/30',
+    ADOPTE: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', PUBLIE: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30',
+    NOTIFIE: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', CLOS: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+    REJETE: 'bg-red-500/20 text-red-300 border-red-500/30', CLASSE_SANS_SUITE: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+    RETIRE: 'bg-gray-500/20 text-gray-300 border-gray-500/30',
+  };
+  const statutBadge = (s) => `<span class="px-2 py-0.5 rounded text-[10px] border font-bold ${STATUT_STYLE[s] || STATUT_STYLE.CLOS}">${esc(s.replace(/_/g, ' '))}</span>`;
+  const dDate = (e) => (e ? new Date(e).toISOString().slice(0, 10) : '—');
+  // Libellés des actions proposées par le serveur (allowedActions).
+  const WF_ACTIONS = {
+    COMPLETUDE_OK: ['Prononcer la recevabilité', null],
+    COMPLETUDE_KO: ['Demander un complément', { piecesManquantes: ['À préciser dans la demande'] }],
+    COMPLEMENT_RECU: ['Complément reçu', { note: 'Complément reçu du demandeur' }],
+    CLASSER_SANS_SUITE: ['Classer sans suite', { motif: 'Délai de complément échu' }],
+    QUALIFIER: ['Confirmer la qualification', {}],
+    TRANSMETTRE_AVIS: ['Transmettre (rapport + avis)', { rapport: 'Rapport d\'instruction versé au dossier' }],
+    DEMANDER_COMPLEMENT: ['Suspendre (complément)', { note: 'Complément demandé au demandeur' }],
+    RENDRE_AVIS: ['Rendre un avis FAVORABLE', { sens: 'FAVORABLE', motivation: 'Avis favorable' }],
+    VISER: ['Viser et transmettre au SE', null],
+    DECIDER_SE: ['Décider (SE)', { sens: 'ADOPTE', motivation: 'Décision du Secrétariat Exécutif' }],
+    DELIBERER_CR: ['Délibérer (CR) — adoption', { sens: 'ADOPTE', motivation: 'Délibération du Conseil' }],
+    RETIRER: ['Retirer le dossier', null],
+  };
+  let wfSelected = null;
+
+  async function wfAction(id, action) {
+    const def = WF_ACTIONS[action];
+    try {
+      await sendJSON(`/api/v1/workflow/dossiers/${id}/action`, 'POST', { action, params: def && def[1] ? def[1] : {} });
+      wfSelected = id;
+      await loadWorkflow();
+    } catch (e) { alert(e.message); }
+  }
+
+  function wfDetailHtml(d) {
+    const avis = (d.avis || []).length
+      ? `<table class="w-full text-xs mb-3"><thead><tr class="text-gray-500 text-[10px] uppercase"><th class="p-1 text-left">Avis</th><th class="p-1 text-left">Sens</th><th class="p-1 text-left">Motivation</th></tr></thead><tbody>${d.avis.map((a) => `<tr class="border-b border-gray-800/40"><td class="p-1 font-mono text-gray-300">${esc(a.direction)}</td><td class="p-1">${a.statut === 'ATTENDU' ? '<span class="text-amber-300">ATTENDU</span>' : esc(a.statut)}</td><td class="p-1 text-gray-400">${esc(a.motivation || '—')}</td></tr>`).join('')}</tbody></table>` : '';
+    const actions = (d.actions || []).map((a) => `<button data-wf-action="${esc(a)}" data-wf-id="${esc(d.id)}" class="bg-emerald-700 hover:bg-emerald-600 text-white rounded px-3 py-1.5 text-xs mr-2 mb-2">${esc((WF_ACTIONS[a] || [a])[0])}</button>`).join('') || '<span class="text-gray-500 text-xs italic">Aucune action pour votre profil au statut courant.</span>';
+    const suivi = (d.suivi || []).slice(-12).reverse().map((s) => `<tr class="border-b border-gray-800/40"><td class="p-1 text-gray-500">${esc(dDate(s.epoch))}</td><td class="p-1 font-mono text-gray-400">${esc(s.action)}</td><td class="p-1">${esc(s.de || '—')} → ${esc(s.vers || '—')}</td><td class="p-1 text-gray-400">${esc((s.note || '').slice(0, 90))}</td><td class="p-1 text-gray-500">${esc(s.acteur)}</td></tr>`).join('');
+    return `
+      <div class="flex items-start justify-between gap-3 flex-wrap mb-2">
+        <div><span class="font-mono text-emerald-300 text-sm">${esc(d.numero)}</span> ${statutBadge(d.statut)} ${d.sla.enRetard ? '<span class="px-2 py-0.5 rounded text-[10px] bg-red-500/20 text-red-300 border border-red-500/30 font-bold">EN RETARD</span>' : ''}
+        <p class="text-sm text-gray-200 mt-1">${esc(d.objet)}</p>
+        <p class="text-[11px] text-gray-400 mt-0.5">${esc(d.typeLabel)} · pilote ${esc(d.directionPilote || '—')} · demandeur ${esc((d.demandeur || {}).nom || '—')} · échéance ${esc(dDate(d.sla.echeance))}</p></div>
+      </div>
+      ${d.decision ? `<p class="text-xs mb-2"><span class="font-bold ${d.decision.sens === 'ADOPTE' ? 'text-emerald-300' : 'text-red-300'}">${esc(d.decision.niveau)} — ${esc(d.decision.sens)}</span> <span class="text-gray-400">· acte signé électroniquement (${esc(d.decision.signature.slice(0, 34))}…)</span></p>` : ''}
+      ${avis}
+      <div class="mb-3">${actions}</div>
+      <p class="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Suivi (journal du dossier)</p>
+      <div class="overflow-auto max-h-52"><table class="w-full text-xs"><tbody>${suivi}</tbody></table></div>`;
+  }
+
+  async function loadWorkflow() {
+    const d = await getJSON('/api/v1/workflow');
+    const sel = wfSelected ? (d.dossiers.find((x) => x.id === wfSelected) || d.corbeille.find((x) => x.id === wfSelected)) : null;
+    const rowsOf = (list) => table([
+      { label: 'N°', key: 'numero', cls: 'font-mono text-emerald-300', render: (r) => `<a href="#" data-wf-open="${esc(r.id)}" class="font-mono text-emerald-300 hover:underline">${esc(r.numero)}</a>` },
+      { label: 'Type', render: (r) => esc(r.typeLabel) },
+      { label: 'Objet', render: (r) => esc(r.objet.slice(0, 60)) },
+      { label: 'Pilote', key: 'directionPilote', cls: 'font-mono text-gray-400' },
+      { label: 'Statut', render: (r) => statutBadge(r.statut) },
+      { label: 'Échéance', render: (r) => `${esc(dDate(r.sla.echeance))}${r.sla.enRetard ? ' <span class="text-red-300 font-bold">⏰</span>' : (r.drapeaux.includes('ALERTE_80') ? ' <span class="text-amber-300">!</span>' : '')}` },
+      { label: 'À faire', render: (r) => (r.actions.length ? `<span class="text-emerald-300 font-bold">${r.actions.length} action(s)</span>` : '—') },
+    ], list);
+    const typeOptions = d.types.map((t) => `<option value="${esc(t.id)}">${esc(t.label)} (${esc(t.decision)}, ${t.slaJours} j)</option>`).join('');
+    $('view-workflow').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${kpi('Dossiers en cours', nf.format(d.stats.encours), 'border-t-emerald-500')}
+        ${kpi('En retard (SLA échu)', nf.format(d.stats.enRetard), d.stats.enRetard ? 'border-t-red-500' : 'border-t-emerald-500')}
+        ${kpi('Ma corbeille (actions dues)', nf.format(d.corbeille.length), 'border-t-sky-500')}
+        ${kpi('Délai médian de clôture', d.stats.delaiMedianJours == null ? '—' : d.stats.delaiMedianJours + ' j', 'border-t-indigo-500')}
+      </div>
+      <div class="mb-4 flex items-end gap-2 flex-wrap">
+        <div><label class="text-gray-400 block mb-1 text-[10px] uppercase">Déposer un dossier</label>
+          <select id="wf-type" class="bg-gray-800 border border-gray-700 rounded p-2 text-white text-xs">${typeOptions}</select></div>
+        <input id="wf-objet" placeholder="Objet du dossier…" class="bg-gray-800 border border-gray-700 rounded p-2 text-white text-xs w-72">
+        <button id="wf-deposer" class="bg-emerald-700 hover:bg-emerald-600 text-white rounded px-4 py-2 text-xs font-medium">Déposer (accusé immédiat)</button>
+      </div>
+      ${sel ? panel('Dossier sélectionné', wfDetailHtml(sel)) : ''}
+      <div class="grid grid-cols-1 gap-5 ${sel ? 'mt-5' : ''}">
+        ${panel(`Ma corbeille — dossiers attendant MON action (${d.corbeille.length})`, rowsOf(d.corbeille))}
+        ${panel(`Dossiers visibles par mon profil (${d.dossiers.length}) — cloisonnement RG-16 appliqué`, rowsOf(d.dossiers))}
+      </div>`;
+    $('view-workflow').querySelectorAll('[data-wf-open]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); wfSelected = a.dataset.wfOpen; loadWorkflow(); }));
+    $('view-workflow').querySelectorAll('[data-wf-action]').forEach((b) => b.addEventListener('click', () => wfAction(b.dataset.wfId, b.dataset.wfAction)));
+    const dep = $('wf-deposer');
+    if (dep) dep.addEventListener('click', async () => {
+      try {
+        const r = await sendJSON('/api/v1/workflow/dossiers', 'POST', { typeId: $('wf-type').value, objet: $('wf-objet').value });
+        wfSelected = r.dossier.id; await loadWorkflow();
+      } catch (e) { alert(e.message); }
+    });
+  }
+
+  // ==========================================================================
+  // Module M14 — Services financiers numériques
+  // ==========================================================================
+  // Drapeau de confiance (M14/L7) : chaque valeur affichée porte sa source.
+  const flagBadge = (f) => {
+    const m = {
+      MESURE: ['MESURÉ', 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30', 'Constaté par sonde indépendante (journal probant signé)'],
+      CONTROLE: ['CONTRÔLÉ', 'bg-sky-500/20 text-sky-300 border-sky-500/30', 'Recalculé par la plateforme depuis les données collectées'],
+      DECLARE: ['DÉCLARÉ', 'bg-amber-500/20 text-amber-300 border-amber-500/30', 'Transmis par l\'assujetti, non vérifié'],
+    };
+    const [label, cls, tip] = m[f] || m.DECLARE;
+    return `<span class="px-1.5 py-0.5 rounded text-[9px] border ${cls} font-bold align-middle" title="${esc(tip)}">${label}</span>`;
+  };
+  const pctOrDash = (v) => (v == null ? '—' : (100 * v).toFixed(1) + ' %');
+
+  async function loadMesures() {
+    const d = await getJSON('/api/v1/probes');
+    const opRows = table([
+      { label: 'Opérateur', key: 'name', render: (r) => `<span class="${esc(r.color || '')} font-medium">${esc(r.name)}</span>` },
+      { label: 'Succès déclaré (USSD)', render: (r) => `${pctOrDash(r.declared.successRate)} ${flagBadge('DECLARE')}` },
+      { label: 'Succès mesuré (USSD)', render: (r) => `${pctOrDash(r.measured.ussdSuccessRate)} ${flagBadge('MESURE')}` },
+      { label: 'Écart (pts)', render: (r) => (r.ecartDispoPts == null ? '—' : `<span class="${r.ecartDispoPts >= d.seuils.dispoPts ? 'text-red-300 font-bold' : 'text-gray-300'}">${(100 * r.ecartDispoPts).toFixed(1)}</span>`) },
+      { label: 'p95 mesuré', render: (r) => (r.measured.p95LatencyMs == null ? '—' : nf.format(r.measured.p95LatencyMs) + ' ms') },
+      { label: 'Constats tarifaires', render: (r) => `${nf.format(r.tarifConstats)} (écarts : <span class="${r.tarifEcarts ? 'text-red-300 font-bold' : 'text-emerald-300'}">${r.tarifEcarts}</span>)` },
+      { label: 'Verdict', render: (r) => (r.verdict === 'ECART'
+        ? `<span class="px-2 py-0.5 rounded text-[10px] bg-red-500/20 text-red-300 border border-red-500/30 font-bold">ÉCART</span>${r.contradictoireId ? ` <span class="text-[10px] text-gray-400 font-mono">${esc(r.contradictoireId)}</span>` : ''}`
+        : '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">CONFORME</span>') },
+    ], d.byOperator);
+    const chRows = table([
+      { label: 'Canal', key: 'canal', cls: 'font-mono text-gray-300' },
+      { label: 'Mesures', render: (r) => nf.format(r.total) },
+      { label: 'Taux de succès', render: (r) => `${pctOrDash(r.successRate)} ${flagBadge('MESURE')}` },
+      { label: 'Latence moyenne', render: (r) => (r.avgLatencyMs == null ? '—' : nf.format(r.avgLatencyMs) + ' ms') },
+      { label: 'p95', render: (r) => (r.p95LatencyMs == null ? '—' : nf.format(r.p95LatencyMs) + ' ms') },
+    ], d.byChannel);
+    const contra = table([
+      { label: 'Dossier', key: 'caseId', cls: 'font-mono text-emerald-300' },
+      { label: 'Objet', key: 'title' },
+      { label: 'Statut', render: (r) => `<span class="px-2 py-0.5 rounded text-[10px] border font-bold ${r.status === 'CLOS' ? 'bg-gray-500/20 text-gray-300 border-gray-500/30' : 'bg-red-500/20 text-red-300 border-red-500/30'}">${esc(r.status)}</span>` },
+      { label: 'Ouvert le', render: (r) => esc((r.createdAt || '').slice(0, 16).replace('T', ' ')) },
+    ], d.contradictoires);
+    const j = d.journal;
+    $('view-mesures').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${kpi('Campagnes exécutées', nf.format(d.campaign.count), 'border-t-emerald-500')}
+        ${kpi('Mesures retenues (fenêtre)', nf.format(d.campaign.retained), 'border-t-sky-500')}
+        ${kpi('Journal probant (scellés)', nf.format(j.total), 'border-t-indigo-500')}
+        ${kpi('Intégrité du journal', j.integrity && j.integrity.valid ? 'VALIDE' : 'ROMPUE', j.integrity && j.integrity.valid ? 'border-t-emerald-500' : 'border-t-red-500')}
+      </div>
+      <div class="mb-4 flex items-center gap-3 flex-wrap">
+        <button id="btn-campagne" class="bg-emerald-700 hover:bg-emerald-600 text-white rounded px-4 py-2 text-sm font-medium"><i class="fa-solid fa-satellite-dish mr-2"></i>Lancer une campagne</button>
+        <span class="text-xs text-gray-400">Le mesuré prime sur le déclaré : écart ≥ ${(100 * d.seuils.dispoPts).toFixed(0)} pt de disponibilité (ou constat tarifaire ≠ grille) → procédure contradictoire tracée.</span>
+      </div>
+      ${panel('Mesuré vs déclaré par opérateur (canal USSD)', opRows)}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+        ${panel('Qualité mesurée par canal', chRows)}
+        ${panel('Procédures contradictoires ouvertes (N3)', contra)}
+      </div>`;
+    const btn = $('btn-campagne');
+    if (btn) btn.addEventListener('click', async () => { btn.disabled = true; try { await sendJSON('/api/v1/probes/campaign', 'POST', {}); await loadMesures(); } catch (e) { console.error(e); } });
+  }
+
+  async function loadTiers() {
+    const d = await getJSON('/api/v1/thirdparty');
+    const demRows = table([
+      { label: 'Demande', key: 'id', cls: 'font-mono text-gray-300' },
+      { label: 'PSP', key: 'psp' },
+      { label: 'Hôte', key: 'hostOperatorId', cls: 'font-mono' },
+      { label: 'Canal', key: 'canal', cls: 'font-mono text-gray-400' },
+      { label: 'J0 → J3 (j)', render: (r) => (r.delaiJ3 == null ? `${nf.format(r.ageJours)} j (en cours)` : nf.format(r.delaiJ3) + ' j') },
+      { label: 'Statut', render: (r) => `<span class="px-2 py-0.5 rounded text-[10px] border font-bold ${r.statut === 'EN_SERVICE' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' : r.statut === 'REFUSEE' ? 'bg-red-500/20 text-red-300 border-red-500/30' : 'bg-amber-500/20 text-amber-300 border-amber-500/30'}">${esc(r.statut)}</span>` },
+      { label: 'Délais', render: (r) => (r.depassement ? '<span class="text-red-300 font-bold">DÉPASSÉ</span>' : '<span class="text-emerald-300">OK</span>') },
+    ], d.demandes);
+    const at04 = table([
+      { label: 'Canal', key: 'canal', cls: 'font-mono text-gray-300' },
+      { label: 'Wallet maison', render: (r) => `${pctOrDash(r.wallet.successRate)} · p95 ${r.wallet.p95LatencyMs == null ? '—' : nf.format(r.wallet.p95LatencyMs) + ' ms'}` },
+      { label: 'Canal PSP', render: (r) => `${pctOrDash(r.psp.successRate)} · p95 ${r.psp.p95LatencyMs == null ? '—' : nf.format(r.psp.p95LatencyMs) + ' ms'}` },
+      { label: 'Écart (pts)', render: (r) => (r.ecartPts == null ? '—' : `<span class="${r.discrimination ? 'text-red-300 font-bold' : 'text-gray-300'}">${(100 * r.ecartPts).toFixed(1)}</span> ${flagBadge('MESURE')}`) },
+      { label: 'Non-discrimination', render: (r) => (r.discrimination ? '<span class="text-red-300 font-bold">À INSTRUIRE</span>' : '<span class="text-emerald-300">CONFORME</span>') },
+    ], d.at04);
+    const tarifs = table([
+      { label: 'Canal', key: 'canal', cls: 'font-mono text-gray-300' },
+      { label: 'Unité', key: 'unite' },
+      { label: 'Tarif (XAF)', render: (r) => `${nf.format(r.tarifXaf)} ${flagBadge('DECLARE')}` },
+      { label: 'PSP', key: 'psp' },
+      { label: 'Observation', render: (r) => (r.signalement ? `<span class="text-amber-300">${esc(r.signalement)}</span>` : '—') },
+    ], d.at03);
+    const plaintes = table([
+      { label: 'Réf.', key: 'id', cls: 'font-mono text-gray-300' },
+      { label: 'PSP', key: 'psp' },
+      { label: 'Hôte', key: 'hostOperatorId', cls: 'font-mono' },
+      { label: 'Objet', key: 'objet' },
+      { label: 'Statut', key: 'statut', render: (r) => `<span class="text-amber-300 font-bold">${esc(r.statut)}</span>` },
+      { label: 'Échéance instruction', render: (r) => `${nf.format(r.joursRestants)} j` },
+    ], d.plaintes);
+    $('view-tiers').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${kpi('Demandes de raccordement', nf.format(d.at01.demandes), 'border-t-emerald-500')}
+        ${kpi('Délai médian J0→J3 (AT-01)', d.at01.delaiMedianJ3 == null ? '—' : nf.format(d.at01.delaiMedianJ3) + ' j', 'border-t-sky-500')}
+        ${kpi('En attente > 30 j (AT-02)', nf.format(d.at02.enAttentePlus30j), d.at02.enAttentePlus30j ? 'border-t-amber-500' : 'border-t-emerald-500')}
+        ${kpi('Délais dépassés', nf.format(d.at02.depassements), d.at02.depassements ? 'border-t-red-500' : 'border-t-emerald-500')}
+      </div>
+      ${panel(`Registre des raccordements — jalons réglementaires : accusé ≤ ${d.delaisReglementaires.j1JoursOuvres} j ouvrés · réponse ≤ ${d.delaisReglementaires.j2Jours} j · mise en service ≤ ${d.delaisReglementaires.j3Jours} j`, demRows)}
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+        ${panel('AT-04 — Qualité comparée wallet maison vs canal PSP (mêmes cellules de mesure)', at04)}
+        ${panel('AT-03 — Conditions tarifaires de gros déclarées', tarifs)}
+      </div>
+      <div class="mt-5">${panel('Plaintes pour discrimination (instruction L8.3)', plaintes)}</div>`;
+  }
+
+  async function loadReclamations() {
+    const d = await getJSON('/api/v1/complaints');
+    const motifRows = table([
+      { label: 'Motif', key: 'label' },
+      { label: 'Reçues', render: (r) => nf.format(r.recues) },
+      { label: 'Closes', render: (r) => nf.format(r.closes) },
+    ], d.byMotif);
+    const opRows = table([
+      { label: 'Opérateur', render: (r) => `<span class="${esc(r.color || '')} font-medium">${esc(r.name)}</span>` },
+      { label: 'Reçues', render: (r) => nf.format(r.recues) },
+      { label: 'Liées à un incident', render: (r) => nf.format(r.liees) },
+      { label: 'Délai médian (j)', render: (r) => (r.delaiMedianJours == null ? '—' : r.delaiMedianJours) },
+    ], d.byOperator);
+    const corrRows = table([
+      { label: 'Code erreur', key: 'code', cls: 'font-mono text-gray-300' },
+      { label: 'Incident', key: 'label' },
+      { label: 'Réclamations corrélées', render: (r) => nf.format(r.count) },
+    ], d.correlation);
+    const recRows = table([
+      { label: 'Heure', render: (r) => esc(t(r.epoch)) },
+      { label: 'Réf.', key: 'id', cls: 'font-mono text-gray-400' },
+      { label: 'Opérateur', key: 'operatorId', cls: 'font-mono' },
+      { label: 'Canal', key: 'canal', cls: 'font-mono text-gray-400' },
+      { label: 'Province', key: 'province' },
+      { label: 'Motif', key: 'motif', cls: 'text-gray-300' },
+      { label: 'Incident', render: (r) => (r.lieAIncident ? `<span class="text-red-300 font-mono">${esc(r.errorCode || '')}</span>` : '—') },
+      { label: 'Statut', key: 'statut', render: (r) => (r.statut === 'CLOSE' ? '<span class="text-emerald-300">CLOSE</span>' : '<span class="text-amber-300">EN COURS</span>') },
+    ], d.recent);
+    $('view-reclamations').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${kpi('Réclamations reçues', nf.format(d.totals.recues) + ' ' + flagBadge(d.flag), 'border-t-emerald-500')}
+        ${kpi('En cours', nf.format(d.totals.enCours), 'border-t-amber-500')}
+        ${kpi('Liées à un incident technique', d.totals.tauxLieesIncidentPct + ' %', 'border-t-sky-500')}
+        ${kpi('Délai médian de traitement', (d.totals.delaiMedianJours == null ? '—' : d.totals.delaiMedianJours + ' j'), 'border-t-indigo-500')}
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        ${panel('Par motif', motifRows)}
+        ${panel('Par opérateur', opRows)}
+        ${panel('Corrélation aux incidents (codes d\'erreur)', corrRows)}
+      </div>
+      <div class="mt-5">${panel('Réclamations récentes (MSISDN masqués)', recRows)}</div>`;
+  }
+
+  async function loadPostal() {
+    const d = await getJSON('/api/v1/postal');
+    const provRows = table([
+      { label: 'Province', key: 'province' },
+      { label: 'Points de service', render: (r) => nf.format(r.points) },
+      { label: 'Dont accès financier exclusif', render: (r) => (r.exclusifs ? `<span class="text-emerald-300 font-bold">${nf.format(r.exclusifs)}</span>` : '—') },
+    ], d.sp01.parProvince);
+    const svcRows = table([
+      { label: 'Service', key: 'label' },
+      { label: 'Opérations', render: (r) => nf.format(r.count) },
+      { label: 'Valeur', render: (r) => xaf(r.sumXaf) + ' XAF' },
+    ], d.sp02.parService);
+    const dispoRows = table([
+      { label: 'Province', key: 'province' },
+      { label: 'Disponibilité SI guichets', render: (r) => `${pctOrDash(r.dispoSiPct)} ${flagBadge(r.flag)}` },
+      { label: 'Délai médian mandat', render: (r) => r.delaiMedianMandatHeures + ' h' },
+    ], d.sp03);
+    const exclRows = table([
+      { label: 'Localité', key: 'localite' },
+      { label: 'Province', key: 'province' },
+      { label: 'Bureau', key: 'pointId', cls: 'font-mono text-gray-400' },
+    ], d.sp06.localites);
+    $('view-postal').innerHTML = `
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+        ${kpi('Points de service financiers', nf.format(d.sp01.points) + ' ' + flagBadge(d.sp01.flag), 'border-t-emerald-500')}
+        ${kpi('Contrôlés sur place (mystères)', nf.format(d.sp01.controlesSurPlace), 'border-t-sky-500')}
+        ${kpi('Passerelle poste ↔ mobile money', nf.format(d.sp05.count) + ' op.', 'border-t-indigo-500')}
+        ${kpi('Localités à accès exclusif (SP-06)', nf.format(d.sp06.localites.length), 'border-t-amber-500')}
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        ${panel('SP-01 — Réseau par province (' + esc(d.operateur.name) + ')', provRows)}
+        ${panel('SP-02 — Activité par service', svcRows)}
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+        ${panel('SP-03/04 — Qualité déclarée par province', dispoRows)}
+        ${panel('SP-06 — Contribution au service universel : seul accès financier de la localité', exclRows)}
+      </div>`;
+  }
+
+  const LOADERS = { observatoire: loadObservatoire, operators: loadOperators, revenus: loadRevenus, qos: loadQos, antifraude: loadAntifraude, investigation: loadInvestigation, analytics: loadAnalytics, connecteurs: loadConnecteurs, registre: loadRegistre, reporting: loadReporting, securite: loadSecurite, admin: loadAdmin, dispatch: loadDispatch, geo: loadGeo, aide: loadAide, mesures: loadMesures, tiers: loadTiers, reclamations: loadReclamations, postal: loadPostal, workflow: loadWorkflow };
 
   // ==========================================================================
   // Navigation
@@ -560,13 +1103,26 @@
       while (n && n.classList.contains('nav-btn')) { if (n.style.display !== 'none') any = true; n = n.nextElementSibling; }
       h.style.display = any ? '' : 'none';
     });
+    // Masque l'en-tête parent « Monitoring » si aucun sous-module n'est affecté.
+    const group = $('nav-group-monitoring'); const head = $('nav-parent-monitoring');
+    if (group && head) {
+      const any = [...group.querySelectorAll('.nav-btn')].some((b) => b.style.display !== 'none');
+      head.style.display = any ? '' : 'none';
+      group.style.display = any ? '' : 'none';
+    }
   }
 
   function renderUser(u) {
     $('user-name').textContent = u.displayName;
-    const labels = { REGULATEUR: 'Régulateur', OBSERVATOIRE: 'Observatoire', REVENUS: 'Régul. économique', QOS: 'Technique/QoS', ANTIFRAUDE: 'Antifraude', JURIDIQUE: 'Juridique', CONSO: 'Consommateurs', ADMIN: 'Administrateur', AUDITEUR: 'Auditeur', OPERATEUR: 'Opérateur' };
-    $('user-role').textContent = labels[u.role] || u.role;
+    const labels = { PRESIDENT: 'Président du CR', CONSEILLER: 'Conseiller du CR', CABINET: 'Cabinet', SECRETARIAT_CABINET: 'Secrétariat Cabinet', SE: 'Secrétaire Exécutif', SE_ADJOINT: 'SE Adjoint', DIRECTEUR: 'Directeur', AGENT: 'Agent', ADMIN_SYSTEME: 'Admin Système', OPERATEUR: 'Opérateur' };
+    $('user-role').textContent = (labels[u.role] || u.role) + (u.direction ? ' · ' + u.direction : '');
     const w = String(u.displayName).split(/\s+/); $('user-avatar').textContent = ((w[0] && w[0][0]) || 'S') + ((w[1] && w[1][0]) || '');
+  }
+
+  // Icône du bouton thème : lune (on est en sombre) / soleil (on est en clair).
+  function renderThemeIcon() {
+    const i = document.querySelector('#btn-theme i');
+    if (i) i.className = 'fa-solid ' + (SumoTheme.get() === 'light' ? 'fa-sun' : 'fa-moon');
   }
 
   async function logout() { try { await fetch('/api/v1/auth/logout', { method: 'POST' }); } catch { /* */ } location.href = '/login.html'; }
@@ -584,7 +1140,12 @@
     document.querySelectorAll('#main-nav [data-tab]').forEach((b) => b.addEventListener('click', () => switchTab(b.dataset.tab)));
     if ($('btn-burger')) $('btn-burger').addEventListener('click', toggleSidebar);
     if ($('btn-logout')) $('btn-logout').addEventListener('click', logout);
-    const first = perms.modules[0] || 'observatoire';
+    if ($('btn-theme')) { $('btn-theme').addEventListener('click', () => SumoTheme.toggle()); renderThemeIcon(); }
+    // Bascule de thème : recolore les graphiques vivants et le fond de carte.
+    document.addEventListener('sumo:theme', () => { renderThemeIcon(); HubCharts.applyTheme(); HubMap.applyTheme(); });
+    // Repli sur l'aide si aucun module n'est affecté (sinon le panneau
+    // observatoire, visible par défaut dans le HTML, pollerait en 403).
+    const first = perms.modules[0] || 'aide';
     switchTab(first);
   }
 

@@ -1,0 +1,344 @@
+{
+  "version": 1,
+  "source": "arcep-digital/server/seed.js — Délibération N°0002/ARCEP/CR/2024",
+  "importedAt": "2026-07-15T23:11:31.304Z",
+  "directions": [
+    {
+      "code": "CR",
+      "nom": "Conseil de Régulation",
+      "type": "GOUVERNANCE",
+      "services": []
+    },
+    {
+      "code": "PCR",
+      "nom": "Président du Conseil de Régulation",
+      "type": "GOUVERNANCE",
+      "services": []
+    },
+    {
+      "code": "CAB",
+      "nom": "Cabinet du Président du Conseil de Régulation",
+      "type": "GOUVERNANCE",
+      "services": [
+        "Conseillers",
+        "Assistants"
+      ]
+    },
+    {
+      "code": "SE",
+      "nom": "Secrétariat Exécutif",
+      "type": "EXECUTIF",
+      "services": []
+    },
+    {
+      "code": "SEA1",
+      "nom": "Secrétariat Exécutif Adjoint 1",
+      "type": "EXECUTIF",
+      "services": []
+    },
+    {
+      "code": "SEA2",
+      "nom": "Secrétariat Exécutif Adjoint 2",
+      "type": "EXECUTIF",
+      "services": []
+    },
+    {
+      "code": "DCBA",
+      "nom": "Direction du Contrôle Budgétaire et de l’Audit",
+      "type": "CONTROLE",
+      "services": [
+        "Suivi et Contrôle budgétaire",
+        "Audit Interne"
+      ]
+    },
+    {
+      "code": "DFC",
+      "nom": "Direction Financière et Comptable",
+      "type": "FINANCE",
+      "services": [
+        "Comptabilité",
+        "Moyens Généraux",
+        "Facturation"
+      ]
+    },
+    {
+      "code": "DJ",
+      "nom": "Direction Juridique",
+      "type": "JURIDIQUE",
+      "services": [
+        "Contentieux",
+        "Juridique"
+      ]
+    },
+    {
+      "code": "DRH",
+      "nom": "Direction des Ressources Humaines",
+      "type": "SUPPORT",
+      "services": [
+        "Affaires Administratives et Paie",
+        "Capital Humain",
+        "Affaires Sociales"
+      ]
+    },
+    {
+      "code": "DSIN",
+      "nom": "Direction des Systèmes d’Information et du Numérique",
+      "type": "SUPPORT",
+      "services": [
+        "Exploitation",
+        "Gestion des Applications",
+        "Numérisation"
+      ]
+    },
+    {
+      "code": "DCTLF",
+      "nom": "Direction du Contrôle du Trafic et de la Lutte contre la Fraude",
+      "type": "METIER",
+      "services": [
+        "Trafic Voix et Data",
+        "Trafic Mobile Money"
+      ]
+    },
+    {
+      "code": "DDSU",
+      "nom": "Direction du Développement du Service Universel",
+      "type": "METIER",
+      "services": [
+        "Facturation et Recouvrement",
+        "Technique",
+        "Comptabilité"
+      ]
+    },
+    {
+      "code": "DHQR",
+      "nom": "Direction des Homologations et de la Qualité des Réseaux",
+      "type": "METIER",
+      "services": [
+        "Qualité des Réseaux",
+        "Contrôle Technique des Infrastructures",
+        "Centre des Homologations"
+      ]
+    },
+    {
+      "code": "DIAI",
+      "nom": "Direction de l’Innovation et des Affaires Internationales",
+      "type": "METIER",
+      "services": [
+        "Innovation et veille technologique",
+        "Affaires Internationales"
+      ]
+    },
+    {
+      "code": "DM",
+      "nom": "Direction des Marchés",
+      "type": "METIER",
+      "services": [
+        "Observatoire des marchés",
+        "Relations avec les Consommateurs",
+        "Suivi des Actes et Relations Inter-opérateurs",
+        "Activités postales"
+      ]
+    },
+    {
+      "code": "DRRRS",
+      "nom": "Direction des Ressources Rares, des Réseaux et des Services",
+      "type": "METIER",
+      "services": [
+        "Fréquences Radioélectriques",
+        "Ressources en Numérotation et Adressage",
+        "Réseaux et Infrastructures"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "id": "u-pcr",
+      "username": "pcr",
+      "nom": "Président du Conseil de Régulation",
+      "role": "PRESIDENT",
+      "direction": "PCR"
+    },
+    {
+      "id": "u-cr1",
+      "username": "cr1",
+      "nom": "Membre du Conseil de Régulation (1)",
+      "role": "CONSEILLER",
+      "direction": "CR"
+    },
+    {
+      "id": "u-cr2",
+      "username": "cr2",
+      "nom": "Membre du Conseil de Régulation (2)",
+      "role": "CONSEILLER",
+      "direction": "CR"
+    },
+    {
+      "id": "u-cab",
+      "username": "cab",
+      "nom": "Conseiller du Cabinet du Président",
+      "role": "CABINET",
+      "direction": "CAB"
+    },
+    {
+      "id": "u-sec-cab",
+      "username": "sec-cab",
+      "nom": "Secrétariat du Cabinet de la Présidence",
+      "role": "SECRETARIAT_CABINET",
+      "direction": "CAB"
+    },
+    {
+      "id": "u-se",
+      "username": "se",
+      "nom": "Secrétaire Exécutif",
+      "role": "SE",
+      "direction": "SE"
+    },
+    {
+      "id": "u-sea1",
+      "username": "sea1",
+      "nom": "Secrétaire Exécutif Adjoint 1",
+      "role": "SE_ADJOINT",
+      "direction": "SEA1"
+    },
+    {
+      "id": "u-sea2",
+      "username": "sea2",
+      "nom": "Secrétaire Exécutif Adjoint 2",
+      "role": "SE_ADJOINT",
+      "direction": "SEA2"
+    },
+    {
+      "id": "u-dcba",
+      "username": "dcba",
+      "nom": "Directeur du Contrôle Budgétaire et de l’Audit",
+      "role": "DIRECTEUR",
+      "direction": "DCBA"
+    },
+    {
+      "id": "u-dfc",
+      "username": "dfc",
+      "nom": "Directeur Financier et Comptable",
+      "role": "DIRECTEUR",
+      "direction": "DFC"
+    },
+    {
+      "id": "u-dj",
+      "username": "dj",
+      "nom": "Directeur Juridique",
+      "role": "DIRECTEUR",
+      "direction": "DJ"
+    },
+    {
+      "id": "u-drh",
+      "username": "drh",
+      "nom": "Directeur des Ressources Humaines",
+      "role": "DIRECTEUR",
+      "direction": "DRH"
+    },
+    {
+      "id": "u-dsin",
+      "username": "dsin",
+      "nom": "Directeur des Systèmes d’Information et du Numérique",
+      "role": "DIRECTEUR",
+      "direction": "DSIN"
+    },
+    {
+      "id": "u-dctlf",
+      "username": "dctlf",
+      "nom": "Directeur du Contrôle du Trafic et de la Lutte contre la Fraude",
+      "role": "DIRECTEUR",
+      "direction": "DCTLF"
+    },
+    {
+      "id": "u-ddsu",
+      "username": "ddsu",
+      "nom": "Directeur du Développement du Service Universel",
+      "role": "DIRECTEUR",
+      "direction": "DDSU"
+    },
+    {
+      "id": "u-dhqr",
+      "username": "dhqr",
+      "nom": "Directeur des Homologations et de la Qualité des Réseaux",
+      "role": "DIRECTEUR",
+      "direction": "DHQR"
+    },
+    {
+      "id": "u-diai",
+      "username": "diai",
+      "nom": "Directeur de l’Innovation et des Affaires Internationales",
+      "role": "DIRECTEUR",
+      "direction": "DIAI"
+    },
+    {
+      "id": "u-dm",
+      "username": "dm",
+      "nom": "Directeur des Marchés",
+      "role": "DIRECTEUR",
+      "direction": "DM"
+    },
+    {
+      "id": "u-drrrs",
+      "username": "drrrs",
+      "nom": "Directeur des Ressources Rares, des Réseaux et des Services",
+      "role": "DIRECTEUR",
+      "direction": "DRRRS"
+    },
+    {
+      "id": "u-ag-dhqr",
+      "username": "ag-dhqr",
+      "nom": "Ingénieur homologation — Centre des Homologations",
+      "role": "AGENT",
+      "direction": "DHQR"
+    },
+    {
+      "id": "u-ag2-dhqr",
+      "username": "ag2-dhqr",
+      "nom": "Ingénieur qualité des réseaux",
+      "role": "AGENT",
+      "direction": "DHQR"
+    },
+    {
+      "id": "u-ag-dfc",
+      "username": "ag-dfc",
+      "nom": "Comptable — Service Facturation",
+      "role": "AGENT",
+      "direction": "DFC"
+    },
+    {
+      "id": "u-ag-dcba",
+      "username": "ag-dcba",
+      "nom": "Contrôleur budgétaire / Auditeur interne",
+      "role": "AGENT",
+      "direction": "DCBA"
+    },
+    {
+      "id": "u-ag-dj",
+      "username": "ag-dj",
+      "nom": "Juriste — Service Juridique",
+      "role": "AGENT",
+      "direction": "DJ"
+    },
+    {
+      "id": "u-ag-dm",
+      "username": "ag-dm",
+      "nom": "Analyste — Observatoire des marchés",
+      "role": "AGENT",
+      "direction": "DM"
+    },
+    {
+      "id": "u-ag-drrrs",
+      "username": "ag-drrrs",
+      "nom": "Instructeur des titres — Ressources rares",
+      "role": "AGENT",
+      "direction": "DRRRS"
+    },
+    {
+      "id": "u-ag-dsin",
+      "username": "ag-dsin",
+      "nom": "Administrateur SI — Exploitation",
+      "role": "AGENT",
+      "direction": "DSIN"
+    }
+  ]
+}

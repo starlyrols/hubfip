@@ -12,7 +12,9 @@ services:
     environment:
       NODE_ENV: development
       SUMO_TRUST_PROXY: "1"
-    command: ["npm", "run", "dev"]   # node --watch server.js
+    # Directement node --watch : l'outillage npm est retiré de l'image d'exécution
+    # (surface d'attaque + vulnérabilités de ses paquets embarqués, constat Trivy).
+    command: ["node", "--watch", "server.js"]
     volumes:
       - .:/app                       # code source de l'hôte (hot-reload)
       - /app/node_modules            # conserve les node_modules de l'image

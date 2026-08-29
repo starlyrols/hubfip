@@ -16,6 +16,7 @@ require('../lib/audit').init();
 const model = require('../lib/model');
 const users = require('../lib/users');
 const { createApp } = require('../lib/createApp');
+const { externalInput } = require('./helpers');
 
 function listen(app) { return new Promise((resolve) => { const s = http.createServer(app); s.listen(0, () => resolve(s)); }); }
 const base = (s) => `http://127.0.0.1:${s.address().port}`;
@@ -26,7 +27,7 @@ test('GET /api/v1/auth/accounts expose le catalogue de démo', async () => {
   const j = await (await fetch(base(s) + '/api/v1/auth/accounts')).json();
   assert.equal(j.demoLogin, true);
   const ids = j.accounts.map((a) => a.username);
-  ['regulateur', 'antifraude', 'admin', 'auditeur', 'airtel', 'moov', 'gimac'].forEach((u) => assert.ok(ids.includes(u), `manque ${u}`));
+  ['pcr', 'se', 'dctlf', 'ag-dm', 'admin-systeme', 'airtel', 'moov', 'gimac'].forEach((u) => assert.ok(ids.includes(u), `manque ${u}`));
   assert.ok(j.accounts.every((a) => a.passwordHash === undefined));
   s.close();
 });
@@ -52,16 +53,16 @@ test('POST /api/v1/auth/demo pose une session scopée à l’opérateur + permis
 
 test('POST /api/v1/auth/login : bon mot de passe accepté, mauvais rejeté', async () => {
   const s = await listen(createApp({ demoLogin: true, serveStatic: false }));
-  const ok = await fetch(base(s) + '/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: users.DEMO_PASSWORD }) });
+  const ok = await fetch(base(s) + '/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin-systeme', password: users.DEMO_PASSWORD }) });
   assert.equal(ok.status, 200);
-  const bad = await fetch(base(s) + '/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'mauvais' }) });
+  const bad = await fetch(base(s) + '/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin-systeme', password: 'mauvais' }) });
   assert.equal(bad.status, 401);
   s.close();
 });
 
 test('Accès démo désactivé (prod) → 403', async () => {
   const s = await listen(createApp({ demoLogin: false, serveStatic: false }));
-  const r = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'regulateur' }) });
+  const r = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'se' }) });
   assert.equal(r.status, 403);
   const acc = await (await fetch(base(s) + '/api/v1/auth/accounts')).json();
   assert.equal(acc.demoLogin, false);
@@ -76,8 +77,8 @@ test('GET /api/v1/ledger exige une session', async () => {
 });
 
 test('Le registre est cloisonné sur l’opérateur connecté', async () => {
-  ledger.append(model.buildTDR({ operatorId: 'airtel', type: 'P2P', amount: 1000, source: 'EXTERNAL' }));
-  ledger.append(model.buildTDR({ operatorId: 'moov', type: 'P2P', amount: 2000, source: 'EXTERNAL' }));
+  ledger.append(model.buildTDR(externalInput({ senderOperatorId: 'airtel', amount: 1000 })));
+  ledger.append(model.buildTDR(externalInput({ senderOperatorId: 'moov', amount: 2000, senderMsisdn: '+241062111111' })));
   const s = await listen(createApp({ demoLogin: true, serveStatic: false }));
   const login = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'airtel' }) });
   const cookie = cookieOf(login);
@@ -87,9 +88,9 @@ test('Le registre est cloisonné sur l’opérateur connecté', async () => {
   s.close();
 });
 
-test('Le régulateur voit tous les opérateurs', async () => {
+test('Le Secrétaire Exécutif (supervision complète) voit tous les opérateurs', async () => {
   const s = await listen(createApp({ demoLogin: true, serveStatic: false }));
-  const login = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'regulateur' }) });
+  const login = await fetch(base(s) + '/api/v1/auth/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'se' }) });
   const led = await (await fetch(base(s) + '/api/v1/ledger?limit=500', { headers: { Cookie: cookieOf(login) } })).json();
   const opIds = new Set(led.records.map((r) => r.payload.operator.id));
   assert.ok(opIds.size >= 2);

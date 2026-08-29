@@ -6,6 +6,12 @@ data/keys/
 data/tls/
 data/*.jsonl
 data/*.json
+data/*.bak
+data/*.lock
+data/*.ckpt
+data-backup/
+data/keys/*.key
+data-demo/
 
 # Secrets & environnement
 .env
@@ -13,6 +19,13 @@ data/*.json
 *.pem
 *.key
 *.crt
+
+# Espaces de travail d'agents (sessions Claude parallèles)
+.claude/worktrees/
+.omc/
+
+# Fichiers verrous Office (document ouvert)
+~$*
 
 # Système
 .DS_Store

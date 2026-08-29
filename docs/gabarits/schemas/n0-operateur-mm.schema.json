@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arcep.ga/m14/schemas/n0-operateur-mm.schema.json",
+  "title": "M14 — Lot N0 opérateur mobile money (mensuel)",
+  "description": "Dictionnaire machine du gabarit gabarit-N0-operateur.xlsx (feuilles converties en tableaux d'enregistrements). Contrôles bloquants EX-L2-02 : types, plages, énumérations, complétude. Les contrôles inter-champs non exprimables en JSON Schema sont listés dans x-controles.",
+  "type": "object",
+  "required": ["identification", "comptes", "transactions", "canaux", "qualite", "distribution", "points_service", "tarifs", "reclamations"],
+  "additionalProperties": false,
+  "properties": {
+    "identification": { "$ref": "#/$defs/identification" },
+    "comptes": {
+      "description": "MU-01 / MU-02 — une entrée par province.",
+      "type": "array", "minItems": 9, "maxItems": 9,
+      "items": {
+        "type": "object",
+        "required": ["province", "comptes_enregistres", "comptes_actifs_90j"],
+        "additionalProperties": false,
+        "properties": {
+          "province": { "$ref": "#/$defs/province" },
+          "comptes_enregistres": { "$ref": "#/$defs/entierPositif" },
+          "comptes_actifs_90j": { "$ref": "#/$defs/entierPositif" }
+        }
+      }
+    },
+    "transactions": {
+      "description": "MU-03 / MU-04 / MU-06 / CT-04 — une entrée par type d'opération.",
+      "type": "array", "minItems": 8, "maxItems": 8,
+      "items": {
+        "type": "object",
+        "required": ["type_operation", "nombre", "valeur_xaf", "frais_clients_xaf"],
+        "additionalProperties": false,
+        "properties": {
+          "type_operation": { "$ref": "#/$defs/typeOperation" },
+          "nombre": { "$ref": "#/$defs/entierPositif" },
+          "valeur_xaf": { "$ref": "#/$defs/montantXaf" },
+          "frais_clients_xaf": { "$ref": "#/$defs/montantXaf" }
+        }
+      }
+    },
+    "canaux": {
+      "description": "MU-08 — répartition du nombre d'opérations par canal d'initiation.",
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["canal", "nombre"],
+        "additionalProperties": false,
+        "properties": {
+          "canal": { "$ref": "#/$defs/canal" },
+          "nombre": { "$ref": "#/$defs/entierPositif" }
+        }
+      }
+    },
+    "qualite": {
+      "description": "QS-01 (déclaré) / QS-09 / QS-10 — une entrée par canal.",
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "items": {
+        "type": "object",
+        "required": ["canal", "disponibilite", "incidents_majeurs", "indisponibilite_minutes", "taux_succes"],
+        "additionalProperties": false,
+        "properties": {
+          "canal": { "$ref": "#/$defs/canal" },
+          "disponibilite": { "type": "number", "minimum": 0.9, "maximum": 1, "description": "Fraction (0,9945 = 99,45 %). Plancher 0,9 : en deçà, valeur à justifier hors lot (rejet bloquant)." },
+          "incidents_majeurs": { "$ref": "#/$defs/entierPositif" },
+          "indisponibilite_minutes": { "$ref": "#/$defs/entierPositif" },
+          "taux_succes": { "$ref": "#/$defs/fraction" }
+        }
+      }
+    },
+    "distribution": {
+      "description": "RD-01 — une entrée par province.",
+      "type": "array", "minItems": 9, "maxItems": 9,
+      "items": {
+        "type": "object",
+        "required": ["province", "points_declares", "points_actifs_30j"],
+        "additionalProperties": false,
+        "properties": {
+          "province": { "$ref": "#/$defs/province" },
+          "points_declares": { "$ref": "#/$defs/entierPositif" },
+          "points_actifs_30j": { "$ref": "#/$defs/entierPositif" }
+        }
+      }
+    },
+    "points_service": {
+      "description": "Registre géolocalisé (support RD-03 et échantillonnage mystères). Identifiants professionnels uniquement.",
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id_point", "province", "localite", "latitude", "longitude", "statut", "derniere_activite"],
+        "additionalProperties": false,
+        "properties": {
+          "id_point": { "type": "string", "minLength": 3, "maxLength": 40, "pattern": "^[A-Za-z0-9._-]+$", "$comment": "Identifiant interne opérateur — jamais un nom de personne physique." },
+          "province": { "$ref": "#/$defs/province" },
+          "localite": { "$ref": "#/$defs/texteCourtSansMsisdn" },
+          "latitude": { "type": "number", "minimum": -4.1, "maximum": 2.4, "description": "Degrés décimaux — bornes du territoire gabonais." },
+          "longitude": { "type": "number", "minimum": 8.5, "maximum": 14.6 },
+          "statut": { "enum": ["ACTIF", "INACTIF"] },
+          "derniere_activite": { "$ref": "#/$defs/dateIso" }
+        }
+      }
+    },
+    "tarifs": {
+      "description": "CT-01 — grille tarifaire en vigueur (base du contrôle CT-02). Une entrée par type et par palier.",
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["type_operation", "palier_min_xaf", "palier_max_xaf", "frais_fixes_xaf", "frais_pct", "date_application", "date_depot"],
+        "additionalProperties": false,
+        "properties": {
+          "type_operation": { "$ref": "#/$defs/typeOperation" },
+          "palier_min_xaf": { "$ref": "#/$defs/montantXaf" },
+          "palier_max_xaf": { "$ref": "#/$defs/montantXaf" },
+          "frais_fixes_xaf": { "$ref": "#/$defs/montantXaf" },
+          "frais_pct": { "$ref": "#/$defs/fraction" },
+          "date_application": { "$ref": "#/$defs/dateIso" },
+          "date_depot": { "$ref": "#/$defs/dateIso" }
+        }
+      }
+    },
+    "reclamations": {
+      "description": "RC-01..04 — une entrée par motif.",
+      "type": "array", "minItems": 6, "maxItems": 6,
+      "items": {
+        "type": "object",
+        "required": ["motif", "recues", "closes", "delai_median_jours", "closes_premier_contact", "escaladees_arcep"],
+        "additionalProperties": false,
+        "properties": {
+          "motif": { "enum": ["TRANSACTION_NON_REMBOURSEE", "FRAIS_CONTESTES", "ACCES_COMPTE_FRAUDE", "AGENT_POINT_SERVICE", "QUALITE_CANAL", "AUTRE"] },
+          "recues": { "$ref": "#/$defs/entierPositif" },
+          "closes": { "$ref": "#/$defs/entierPositif" },
+          "delai_median_jours": { "type": "number", "minimum": 0, "maximum": 365 },
+          "closes_premier_contact": { "$ref": "#/$defs/entierPositif" },
+          "escaladees_arcep": { "$ref": "#/$defs/entierPositif" }
+        }
+      }
+    }
+  },
+  "x-controles": [
+    { "id": "C-OP-01", "regle": "comptes_actifs_90j <= comptes_enregistres pour chaque province", "niveau": "bloquant" },
+    { "id": "C-OP-02", "regle": "somme(canaux[].nombre) == somme(transactions[].nombre)", "niveau": "bloquant" },
+    { "id": "C-OP-03", "regle": "points_actifs_30j <= points_declares pour chaque province", "niveau": "bloquant" },
+    { "id": "C-OP-04", "regle": "closes <= recues et closes_premier_contact <= closes pour chaque motif", "niveau": "bloquant" },
+    { "id": "C-OP-05", "regle": "palier_min_xaf <= palier_max_xaf pour chaque ligne tarifaire ; paliers d'un même type contigus et sans chevauchement", "niveau": "bloquant" },
+    { "id": "C-OP-06", "regle": "nombre de points_service au statut ACTIF cohérent (±5 %) avec somme(distribution[].points_actifs_30j)", "niveau": "non bloquant — signalement" },
+    { "id": "C-OP-07", "regle": "valeur_xaf / nombre dans [100 ; 10 000 000] XAF par type (vraisemblance)", "niveau": "non bloquant — signalement" }
+  ],
+  "$defs": {
+    "identification": {
+      "type": "object",
+      "required": ["acteur_id", "periode", "date_depot", "declarant", "courriel"],
+      "additionalProperties": false,
+      "properties": {
+        "acteur_id": { "type": "string", "pattern": "^GA-(OP|EME|PSP|POSTE)-[0-9]{3}$", "description": "Identifiant du référentiel des assujettis (EX-L1-03)." },
+        "periode": { "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$", "description": "Mois déclaré, AAAA-MM." },
+        "date_depot": { "$ref": "#/$defs/dateIso" },
+        "declarant": { "$ref": "#/$defs/texteCourtSansMsisdn" },
+        "courriel": { "type": "string", "format": "email", "maxLength": 120 }
+      }
+    },
+    "province": { "enum": ["Estuaire", "Haut-Ogooué", "Moyen-Ogooué", "Ngounié", "Nyanga", "Ogooué-Ivindo", "Ogooué-Lolo", "Ogooué-Maritime", "Woleu-Ntem"] },
+    "canal": { "enum": ["USSD", "STK", "APP", "API", "SMS"] },
+    "typeOperation": { "enum": ["CASHIN", "CASHOUT", "P2P_INTRA", "P2P_INTER", "MARCHAND", "FACTURE", "AIRTIME", "INTERNATIONAL"] },
+    "entierPositif": { "type": "integer", "minimum": 0, "maximum": 100000000000 },
+    "montantXaf": { "type": "number", "minimum": 0, "maximum": 1000000000000000 },
+    "fraction": { "type": "number", "minimum": 0, "maximum": 1, "description": "Les pourcentages sont transmis en fraction (0,015 = 1,5 %)." },
+    "dateIso": { "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$" },
+    "texteCourtSansMsisdn": {
+      "type": "string", "minLength": 1, "maxLength": 120,
+      "not": { "pattern": "(\\+?241[0-9]{7,9})|([0-9]{9,})" },
+      "$comment": "Rejette tout motif de MSISDN ou longue suite de chiffres — EX-L5-01 appliqué dès N0."
+    }
+  }
+}

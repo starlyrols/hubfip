@@ -6,10 +6,36 @@ window.HubCharts = (function () {
   let flux = null; let share = null; let typeC = null; let channelC = null;
   const adhoc = {}; // graphiques de module par id de canvas
 
+  // Couleurs d'habillage (ticks, grilles) lues depuis les variables CSS du thème
+  // courant — voir /css/theme.css. Les couleurs de SÉRIES (palette COLOR) sont
+  // saturées et restent lisibles sur les deux thèmes.
+  function themeColors() {
+    const cs = getComputedStyle(document.documentElement);
+    return {
+      tick: cs.getPropertyValue('--chart-tick').trim() || '#9ca3af',
+      grid: cs.getPropertyValue('--chart-grid').trim() || 'rgba(255,255,255,0.05)',
+    };
+  }
+
   function baseDefaults() {
     if (!window.Chart) return;
-    Chart.defaults.color = '#9ca3af';
+    Chart.defaults.color = themeColors().tick;
     Chart.defaults.font.family = 'Inter';
+  }
+
+  // Bascule clair/sombre : réapplique les couleurs d'habillage aux graphiques
+  // vivants (les couleurs de grille sont figées à la création, Chart.defaults
+  // ne suffit pas).
+  function applyTheme() {
+    if (!window.Chart) return;
+    baseDefaults();
+    const t = themeColors();
+    for (const c of [flux, typeC, channelC, ...Object.values(adhoc)]) {
+      if (!c) continue;
+      if (c.options.scales && c.options.scales.y && c.options.scales.y.grid) c.options.scales.y.grid.color = t.grid;
+      c.update('none');
+    }
+    if (share) share.update('none');
   }
 
   function initDashboard() {
@@ -19,7 +45,7 @@ window.HubCharts = (function () {
       flux = new Chart(fc, {
         type: 'line',
         data: { labels: Array.from({ length: 20 }, () => ''), datasets: [{ label: 'Volume/min', data: Array.from({ length: 20 }, () => 0), borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.08)', borderWidth: 2, tension: 0.4, fill: true, pointRadius: 0 }] },
-        options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' } }, x: { grid: { display: false } } } },
+        options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: themeColors().grid } }, x: { grid: { display: false } } } },
       });
     }
     const sc = document.getElementById('shareChart');
@@ -36,7 +62,7 @@ window.HubCharts = (function () {
     return new Chart(el, {
       type: 'bar',
       data: { labels: [], datasets: [{ data: [], backgroundColor: color, borderRadius: 4 }] },
-      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { font: { size: 9 } }, grid: { display: false } } } },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: themeColors().grid } }, x: { ticks: { font: { size: 9 } }, grid: { display: false } } } },
     });
   }
 
@@ -74,9 +100,9 @@ window.HubCharts = (function () {
     adhoc[canvasId] = new Chart(el, {
       type: 'bar',
       data: { labels, datasets: [{ data, backgroundColor: color || COLOR, borderRadius: 4 }] },
-      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' } }, x: { ticks: { font: { size: 9 } }, grid: { display: false } } } },
+      options: { responsive: true, maintainAspectRatio: false, animation: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: themeColors().grid } }, x: { ticks: { font: { size: 9 } }, grid: { display: false } } } },
     });
   }
 
-  return { COLOR, initDashboard, pushFlux, setShare, setType, setChannel, moduleBar };
+  return { COLOR, initDashboard, pushFlux, setShare, setType, setChannel, moduleBar, applyTheme };
 })();

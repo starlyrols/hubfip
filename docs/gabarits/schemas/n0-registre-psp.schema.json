@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arcep.ga/m14/schemas/n0-registre-psp.schema.json",
+  "title": "M14 — Registre des demandes de raccordement PSP (trimestriel, L8 / AT-01..03)",
+  "description": "Dictionnaire machine du gabarit gabarit-N0-registre-psp.xlsx, déposé par l'opérateur hôte. Contrôles bloquants EX-L2-02 ; contrôles inter-champs en x-controles. Jalons (HYP-10, à confirmer par décision REF-06) : J1 ≤ 5 j ouvrés, J2 ≤ 30 j, J3 ≤ 90 j.",
+  "type": "object",
+  "required": ["identification", "demandes", "tarifs_gros"],
+  "additionalProperties": false,
+  "properties": {
+    "identification": {
+      "type": "object",
+      "required": ["acteur_id", "periode", "date_depot", "declarant", "courriel"],
+      "additionalProperties": false,
+      "properties": {
+        "acteur_id": { "type": "string", "pattern": "^GA-(OP|EME)-[0-9]{3}$", "description": "Opérateur hôte des canaux." },
+        "periode": { "type": "string", "pattern": "^[0-9]{4}-T[1-4]$" },
+        "date_depot": { "$ref": "#/$defs/dateIso" },
+        "declarant": { "$ref": "#/$defs/texteCourt" },
+        "courriel": { "type": "string", "format": "email", "maxLength": 120 }
+      }
+    },
+    "demandes": {
+      "description": "Une entrée par demande de raccordement (en stock ou close sur la période).",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id_demande", "psp", "canal", "date_depot_complet", "statut"],
+        "additionalProperties": false,
+        "properties": {
+          "id_demande": { "type": "string", "pattern": "^RAC-[0-9]{4}-[0-9]{3,}$" },
+          "psp": { "$ref": "#/$defs/texteCourt", "description": "Raison sociale du PSP/fintech demandeur." },
+          "psp_id": { "type": "string", "pattern": "^GA-PSP-[0-9]{3}$", "description": "Si connu au référentiel des assujettis (EX-L1-03)." },
+          "canal": { "enum": ["USSD_DEDIE", "USSD_MUTUALISE", "API_GROS", "SMS"] },
+          "date_depot_complet": { "$ref": "#/$defs/dateIso", "description": "J0 — dossier réputé complet." },
+          "date_accuse": { "$ref": "#/$defs/dateIso", "description": "J1." },
+          "date_reponse": { "$ref": "#/$defs/dateIso", "description": "J2 — réponse technique et commerciale." },
+          "date_mise_en_service": { "$ref": "#/$defs/dateIso", "description": "J3." },
+          "statut": { "enum": ["EN_COURS", "EN_SERVICE", "REFUSEE", "ABANDONNEE"] },
+          "motif_refus": { "$ref": "#/$defs/texteLong" }
+        },
+        "allOf": [
+          { "if": { "properties": { "statut": { "const": "EN_SERVICE" } } }, "then": { "required": ["date_mise_en_service"] } },
+          { "if": { "properties": { "statut": { "const": "REFUSEE" } } }, "then": { "required": ["motif_refus"] } }
+        ]
+      }
+    },
+    "tarifs_gros": {
+      "description": "AT-03 — conditions tarifaires de gros. « standard: true » si l'offre est identique pour tous les PSP ; sinon psp renseigné.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["canal", "unite", "tarif_unitaire_xaf", "standard", "date_convention", "date_depot_convention"],
+        "additionalProperties": false,
+        "properties": {
+          "canal": { "enum": ["USSD_DEDIE", "USSD_MUTUALISE", "API_GROS", "SMS"] },
+          "unite": { "$ref": "#/$defs/texteCourt", "description": "Ex. « session USSD ≤ 90 s », « requête API », « SMS émis »." },
+          "tarif_unitaire_xaf": { "type": "number", "exclusiveMinimum": 0, "maximum": 1000000 },
+          "standard": { "type": "boolean" },
+          "psp": { "$ref": "#/$defs/texteCourt" },
+          "date_convention": { "$ref": "#/$defs/dateIso" },
+          "date_depot_convention": { "$ref": "#/$defs/dateIso" }
+        },
+        "if": { "properties": { "standard": { "const": false } } },
+        "then": { "required": ["psp"] }
+      }
+    }
+  },
+  "x-controles": [
+    { "id": "C-RP-01", "regle": "chronologie J0 <= J1 <= J2 <= J3 lorsque les dates sont renseignées", "niveau": "bloquant" },
+    { "id": "C-RP-02", "regle": "id_demande stable d'un trimestre à l'autre (une demande EN_COURS au T précédent doit réapparaître ou être close)", "niveau": "bloquant" },
+    { "id": "C-RP-03", "regle": "délais : NETWORKDAYS(J0,J1)-1 <= 5 ; J2-J0 <= 30 ; J3-J0 <= 90 — dépassement = signalement AT-01/AT-02 (pas un rejet du lot)", "niveau": "non bloquant — signalement" },
+    { "id": "C-RP-04", "regle": "toute plainte discrimination (L8.3) citant une demande doit référencer un id_demande existant", "niveau": "bloquant" }
+  ],
+  "$defs": {
+    "dateIso": { "type": "string", "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$" },
+    "texteCourt": { "type": "string", "minLength": 1, "maxLength": 120 },
+    "texteLong": { "type": "string", "minLength": 1, "maxLength": 2000 }
+  }
+}

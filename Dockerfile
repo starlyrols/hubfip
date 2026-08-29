@@ -29,6 +29,21 @@ RUN npm ci --omit=dev --ignore-scripts
 # ---- Étage 2 : image d'exécution -------------------------------------------
 FROM node:20.19.5-alpine3.21
 
+# Correctifs de sécurité de la base (constat Trivy, 1re exécution de la CI durcie) :
+# l'image fige des paquets d'avant les correctifs — dont OpenSSL en CRITICAL
+# (CVE-2026-31789, corrigé en 3.3.7-r0). L'upgrade tire les versions patchées du
+# dépôt Alpine 3.21 ; les CVE sans correctif publié sont exclues du verdict CI
+# (`ignore-unfixed`), donc ce qui reste bloquant est ce qui est réellement corrigeable.
+RUN apk upgrade --no-cache
+
+# L'image finale exécute `node server.js` avec des dépendances DÉJÀ installées :
+# npm, npx, corepack et yarn n'y ont aucun rôle. Les retirer supprime d'un coup
+# les vulnérabilités de leurs paquets embarqués (tar CRITICAL, brace-expansion,
+# cross-spawn — constat Trivy) ET l'outil qui permettrait d'installer du code
+# dans un conteneur compromis. Un conteneur d'exécution n'a pas à savoir installer.
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx \
+           /usr/local/bin/corepack /opt/yarn* /usr/local/bin/yarn /usr/local/bin/yarnpkg
+
 ENV NODE_ENV=production \
     NODE_OPTIONS=--max-old-space-size=1024
 

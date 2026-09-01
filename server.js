@@ -90,11 +90,14 @@ try {
     ledger.openReadOnly();
     audit.openReadOnly();
     probes.journal.openReadOnly();
+    require('./lib/archives').openReadOnly();
     logger.info('role.reader', { note: 'instance en lecture seule — aucun verrou pris, aucune écriture' });
   } else {
     ledger.init();
     audit.init();
     probes.init(); // journal probant N3 (chaîne signée dédiée)
+    require('./lib/archives').init(); // registre des ARCHIVES de dossiers (M15)
+    require('./lib/archives').seedFromChain();
   }
 } catch (e) {
   logger.error('ledger.lock.refused', { error: e.message });
@@ -367,7 +370,7 @@ function shutdown(signal) {
   scanner.close(); // arrête le fil de parcours du registre
   // Ferme les descripteurs d'écriture ET libère les verrous : sans cela, un
   // redémarrage rapide buterait sur son propre verrou résiduel.
-  try { ledger.close(); audit.close(); probes.close(); } catch { /* arrêt best-effort */ }
+  try { ledger.close(); audit.close(); probes.close(); require('./lib/archives').close(); } catch { /* arrêt best-effort */ }
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 5000).unref();
 }

@@ -833,9 +833,69 @@
       </div>
       ${d.decision ? `<p class="text-xs mb-2"><span class="font-bold ${d.decision.sens === 'ADOPTE' ? 'text-emerald-300' : 'text-red-300'}">${esc(d.decision.niveau)} — ${esc(d.decision.sens)}</span> <span class="text-gray-400">· acte signé électroniquement (${esc(d.decision.signature.slice(0, 34))}…)</span></p>` : ''}
       ${avis}
+      ${wfPiecesHtml(d)}
       <div class="mb-3">${actions}</div>
       <p class="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Suivi (journal du dossier)</p>
       <div class="overflow-auto max-h-52"><table class="w-full text-xs"><tbody>${suivi}</tbody></table></div>`;
+  }
+
+  // Pièces du dossier : liste hachée + versement DEPUIS LA CONSOLE — le
+  // processus reste numérique de bout en bout, sans canal parallèle.
+  function wfPiecesHtml(d) {
+    const attendues = (d.piecesAttendues || []).map((p) => `<li>${esc(p)}</li>`).join('');
+    const fournies = (d.piecesFournies || []).length
+      ? `<table class="w-full text-xs mb-2"><tbody>${d.piecesFournies.map((p) => `
+          <tr class="border-b border-gray-800/40">
+            <td class="p-1"><a href="/api/v1/workflow/dossiers/${esc(d.numero)}/pieces/${esc(p.id)}" class="text-emerald-300 hover:underline">${esc(p.nom)}</a></td>
+            <td class="p-1 text-gray-500">${nf.format(Math.round(p.octets / 1024))} Ko</td>
+            <td class="p-1"><span class="px-1.5 py-0.5 rounded text-[9px] border ${p.categorie === 'DEMANDEUR' ? 'bg-sky-500/20 text-sky-300 border-sky-500/30' : 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30'} font-bold">${esc(p.categorie)}</span></td>
+            <td class="p-1 text-gray-500">par ${esc(p.versePar)}</td>
+            <td class="p-1 font-mono text-gray-500 hash-truncate" title="SHA-256 ${esc(p.sha256)}">${esc(p.sha256.slice(0, 16))}…</td>
+          </tr>`).join('')}</tbody></table>`
+      : '<p class="text-xs text-gray-500 italic mb-2">Aucune pièce versée pour le moment.</p>';
+    const archive = d.archive
+      ? `<p class="text-xs mb-2"><span class="px-2 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">ARCHIVE ÉLECTRONIQUE SCELLÉE</span>
+         <a href="#" data-wf-archive="${esc(d.numero)}" class="text-emerald-300 hover:underline ml-2">consulter l'enregistrement signé</a></p>` : '';
+    const versoir = ['CLOS', 'RETIRE', 'CLASSE_SANS_SUITE', 'ADOPTE', 'REJETE', 'NOTIFIE', 'PUBLIE', 'EN_ARBITRAGE_SE', 'EN_DELIBERATION_CR'].includes(d.statut)
+      ? ''
+      : `<div class="flex items-center gap-2 flex-wrap mb-2">
+          <input type="file" id="wf-piece-file" class="text-xs text-gray-400" accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.docx,.xlsx">
+          <button data-wf-piece="${esc(d.id)}" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded px-3 py-1.5 text-xs">Verser la pièce (hachée et tracée)</button>
+        </div>`;
+    return `<p class="text-[10px] uppercase tracking-wider text-gray-500 mb-1">Pièces du dossier</p>
+      ${attendues ? `<p class="text-[11px] text-gray-500 mb-1">Attendues : </p><ul class="text-[11px] text-gray-400 list-disc list-inside mb-2">${attendues}</ul>` : ''}
+      ${fournies}${versoir}${archive}`;
+  }
+
+  async function wfVerserPiece(dossierId) {
+    const input = $('wf-piece-file');
+    const fichier = input && input.files && input.files[0];
+    if (!fichier) { alert('Choisissez d\'abord un fichier.'); return; }
+    const base64 = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(',')[1] || '');
+      r.onerror = reject;
+      r.readAsDataURL(fichier);
+    });
+    try {
+      await sendJSON(`/api/v1/workflow/dossiers/${dossierId}/pieces`, 'POST',
+        { nom: fichier.name, mime: fichier.type || 'application/pdf', base64 });
+      await loadWorkflow();
+    } catch (e) { alert(e.message); }
+  }
+
+  async function wfVoirArchive(numero) {
+    try {
+      const r = await getJSON(`/api/v1/workflow/dossiers/${numero}/archive`);
+      const a = r.archive;
+      alert(`Archive électronique ${a.payload.numero}\n`
+        + `Enregistrement n°${a.seq} · ${a.algorithm}\n`
+        + `Hash : ${a.hash}\n`
+        + `Statut final : ${a.payload.statutFinal} · décision : ${a.payload.decision ? a.payload.decision.sens : '—'}\n`
+        + `Pièces : ${a.payload.pieces.length} (empreintes SHA-256 incluses)\n`
+        + `Suivi archivé : ${a.payload.suivi.length} évènements\n\n`
+        + 'Vérifiable hors plateforme avec la clé publique jointe.');
+    } catch (e) { alert(e.message); }
   }
 
   async function loadWorkflow() {
@@ -871,6 +931,8 @@
       </div>`;
     $('view-workflow').querySelectorAll('[data-wf-open]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); wfSelected = a.dataset.wfOpen; loadWorkflow(); }));
     $('view-workflow').querySelectorAll('[data-wf-action]').forEach((b) => b.addEventListener('click', () => wfAction(b.dataset.wfId, b.dataset.wfAction)));
+    $('view-workflow').querySelectorAll('[data-wf-piece]').forEach((b) => b.addEventListener('click', () => wfVerserPiece(b.dataset.wfPiece)));
+    $('view-workflow').querySelectorAll('[data-wf-archive]').forEach((a) => a.addEventListener('click', (ev) => { ev.preventDefault(); wfVoirArchive(a.dataset.wfArchive); }));
     const dep = $('wf-deposer');
     if (dep) dep.addEventListener('click', async () => {
       try {
